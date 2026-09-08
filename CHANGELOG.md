@@ -8,12 +8,26 @@ is built on: a claim about what the gateway accepts carries the probe that
 established it and the date it was run. "The vendor's own documentation says so"
 is not one of those, and an entry resting on it says so outright.
 
-## 0.1.0 - unreleased
+## 0.1.0 - 2026-09-08
 
-**The date on this heading is left blank on purpose and goes in when
-`cargo publish` runs.** crates.io records a publication time; this line should
-be that time rather than the day the section was written, and the two are only
-the same by luck.
+Published at 19:44:51 UTC, as crates.io recorded it.
+
+**This heading read `0.1.0 - unreleased` in the copy that shipped inside the
+0.1.0 tarball, and it will say that forever.** The reasoning was that a
+publication date should be the time crates.io records rather than the day the
+section was written, so the date was left out instead of guessed. That is right
+about the date and wrong about the file: the tarball freezes whatever the
+working tree held at `cargo publish`, so refusing to guess did not leave the
+line blank until it could be filled in - it shipped the word "unreleased" on a
+released version.
+
+What it looked like from the inside: it read as the careful option, because
+every other rule here says not to write a date you have not observed. The rule
+that applies is a different one - a file that goes into a permanent artifact has
+to be correct at the moment it is packaged, not afterwards. **Date the heading
+in the release commit from now on.** The cost this time is one wrong word in one
+shipped file; the same reflex applied to a version number or a URL would be
+worse.
 
 First release, so every entry below is an addition and the list is what the
 crate holds rather than what changed. The part worth reading is the last
