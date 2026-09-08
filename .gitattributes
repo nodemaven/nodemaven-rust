@@ -1,0 +1,18 @@
+# LF in the working tree on every platform.
+#
+# `core.autocrlf` is `true` on this machine, so without this file the first
+# checkout after the first commit rewrites every text file to CRLF on disk - and
+# `cargo package` builds its tarball from the working tree, not from the index.
+# The crate would then ship CRLF to readers on every platform, permanently: a
+# publish cannot be withdrawn, only yanked from resolution.
+#
+# It matters here beyond tidiness because `tests/readme.rs` reads README.md
+# through `include_str!` and splits table rows out of it. Those tests pass under
+# CRLF - checked 2026-09-08 by converting the file and re-running - so this is
+# about what the crate looks like to a reader rather than about a break.
+* text=auto eol=lf
+
+# Binary files, so no line ending translation is attempted on them at all.
+*.png binary
+*.jpg binary
+*.ico binary

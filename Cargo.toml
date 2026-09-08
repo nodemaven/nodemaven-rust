@@ -1,0 +1,71 @@
+[package]
+name = "nodemaven"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+description = "Build and validate proxy connection strings. No transport, no retries."
+license = "MIT"
+readme = "README.md"
+homepage = "https://nodemaven.com"
+keywords = ["proxy", "scraping", "http-proxy", "playwright", "residential"]
+categories = ["network-programming", "web-programming::http-client"]
+
+# An allowlist, and deliberately not an `exclude` list. `cargo package` takes
+# every file in this directory that git does not ignore, and a publish is
+# permanent - `cargo yank` withdraws a version from resolution and deletes
+# nothing - so anything that goes out once stays out. Measured 2026-09-08 before
+# this key existed: `cargo package --list` returned 15 files and one of them was
+# a set of internal working notes that is not meant to leave this machine.
+#
+# A git repository was initialised here later the same day, which changes what
+# the paragraph above describes without weakening the reason for the key. Two
+# things were re-measured after it existed. `cargo package --list` now refuses
+# outright on a dirty tree, naming all 14 uncommitted files, so an accidental
+# publish of work in progress has a second gate in front of it. And the notes
+# file is now ignored - but by `.git/info/exclude`, which is per-clone and is
+# never pushed, so a fresh clone of this repository does not have that rule and
+# would package the file if the allowlist were removed. An ignore rule that only
+# exists on one machine is not a property of the crate.
+#
+# `exclude` would have fixed that instance and not the class: a new scratch file
+# is included by default and silently, while a new source file that an allowlist
+# misses fails loudly at the verification build. It would also have to spell the
+# name of each thing being kept back, in a table crates.io renders on the
+# package page, which for some of them is most of the harm the exclusion was for.
+include = [
+    "src/**/*.rs",
+    "src/data/providers/*.toml",
+    "tests/**/*.rs",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE",
+]
+
+# `repository` is absent on purpose, and the reason changed on 2026-09-08
+# without the decision changing. It used to be that no repository existed. One
+# does now - `nodemaven/nodemaven-rust` - and it is internal, so its URL answers
+# 404 to a logged-out visitor exactly as a missing one does, and the crates.io
+# sidebar would carry a dead link either way.
+#
+# The cost of deferring it is known rather than assumed, and it is not zero.
+# crates.io bakes this table into each published version and never re-reads it,
+# so this key cannot be added to 0.1.0 afterwards - it arrives with 0.1.1 and
+# nothing before that release will show it. The same mechanism has left the
+# Python package on PyPI for three versions with no `Repository` link, and
+# making that source repository public did not change its page by one character.
+#
+# `documentation` is absent for a different reason and permanently: crates.io
+# defaults it to docs.rs, and overriding that with the docs site would replace a
+# generated API reference with prose that is not one.
+
+[dependencies]
+# `parse` and `serde` rather than default features: the writer half is dead
+# weight here, nothing in this crate emits TOML.
+toml = { version = "1.1", default-features = false, features = [
+    "std",
+    "parse",
+    "serde",
+] }
+
+[lints.rust]
+missing_docs = "warn"
