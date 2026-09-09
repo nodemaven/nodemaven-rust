@@ -1,202 +1,69 @@
-//! The Reference section is a contract, so it is compared against the code.
+//! The README read as an artifact, not as prose.
 //!
-//! `tests/check.rs` and `tests/proxy.rs` already pin the three places the README
-//! quotes program *output*. This file pins the place it states an *API*, which
-//! is a different failure: a quoted message that goes stale looks wrong to
-//! anyone who runs it, and a signature that goes stale reads as authoritative
-//! forever.
+//! `tests/check.rs` and `tests/proxy.rs` pin the places the README quotes
+//! program *output*. This file pins the two claims it makes that nothing else
+//! can check, and one link rule.
 //!
-//! The section was written on 2026-09-08 and three of its entries were wrong
-//! within the hour of writing - in the Python README, where the same section
-//! landed the same day: `load(id=...)` for `load(provider_id=...)`,
-//! `load_file(path, *, provider_id=...)` for a positional argument, and a `Page`
-//! accessor left out entirely. A reference written once and never checked is
-//! worse than none, because it is believed.
+//! # Six cases were deleted on 2026-09-09, and what they were for moved
 //!
-//! # Why this scans source text rather than asking the compiler
+//! The file used to hold a scan per exported type, checking that every `pub fn`
+//! appeared in a `## Reference` section, plus one checking that all eighteen
+//! exported names appeared somewhere in the file. They were written on
+//! 2026-09-08 against a README that carried a full API reference, and they
+//! earned their keep: three entries in the equivalent Python section were wrong
+//! within an hour of being written, and eleven of the eighteen names appeared
+//! nowhere at all.
 //!
-//! Python does this with `inspect.signature` and `dir()`, so the list of things
-//! to check is derived and a method added tomorrow is caught tomorrow. Rust has
-//! no runtime reflection, and the obvious substitute - a hand-written list of
-//! method names in this file - has exactly the defect it is meant to catch: it
-//! is a third copy of the contract, and a method added to `proxy.rs` would be
-//! missing from the README *and* from the list, and nothing would fail.
+//! The Reference section is gone, so those scans have no subject. **That is the
+//! README changing purpose, not a check being dropped for convenience.** On
+//! crates.io the long description and the API reference are two different
+//! surfaces: docs.rs generates the second from the source, so a hand-written
+//! copy in the first is a third copy of the contract that can only ever go
+//! stale. `missing_docs` is `warn` in the manifest and `cargo doc` is clean, so
+//! every exported item is documented where the documentation is derived.
 //!
-//! So the list is derived from the source text instead. It is crude and it is
-//! honest about being crude: it relies on `cargo fmt`, which puts `impl X {` at
-//! column 0, its closing brace at column 0, and `pub fn` at exactly four spaces.
-//! `cargo fmt --check` is in CI, so that layout is enforced by something other
-//! than hope. If the scan ever finds nothing it fails rather than passing
-//! vacuously - a check whose subject has silently become empty reports on
-//! itself and not on its subject, which is a mistake this tree has made before
-//! and paid for.
+//! One direction of the old check still matters and is kept below, reversed:
+//! the README shows calls, and a call it shows must exist. The old form asked
+//! whether the code was fully documented, which is rustdoc's job. The new form
+//! asks whether the documentation is true, which is nobody else's.
 
 const README: &str = include_str!("../README.md");
 const PROXY_RS: &str = include_str!("../src/proxy.rs");
-const CHECK_RS: &str = include_str!("../src/check.rs");
-const PROVIDER_RS: &str = include_str!("../src/provider.rs");
-
-/// Every `pub fn` name inside `impl <name> {`, in source order.
-///
-/// Only the inherent `impl` is scanned, so a `Display` or `Debug` body cannot
-/// contribute a name. The closing brace is the first line that is exactly `}`,
-/// which is what rustfmt produces for a top-level block.
-fn public_methods(source: &str, type_name: &str) -> Vec<String> {
-    let header = format!("impl {type_name} {{");
-    let mut names = Vec::new();
-    let mut inside = false;
-    for line in source.lines() {
-        if line == header {
-            inside = true;
-            continue;
-        }
-        if inside {
-            if line == "}" {
-                break;
-            }
-            if let Some(rest) = line.strip_prefix("    pub fn ") {
-                let name: String = rest
-                    .chars()
-                    .take_while(|character| character.is_alphanumeric() || *character == '_')
-                    .collect();
-                if !name.is_empty() {
-                    names.push(name);
-                }
-            }
-        }
-    }
-    assert!(
-        !names.is_empty(),
-        "found no public methods on {type_name}: the scan is reporting on itself"
-    );
-    names
-}
-
-/// The README from `heading` to the next heading of the same level or higher.
-fn section<'a>(heading: &str, level: &str) -> &'a str {
-    let start = README
-        .find(heading)
-        .unwrap_or_else(|| panic!("the README no longer has a {heading:?} heading"));
-    let rest = &README[start + heading.len()..];
-    let end = rest
-        .match_indices('\n')
-        .map(|(index, _)| index + 1)
-        .find(|index| rest[*index..].starts_with(level) && !rest[*index..].starts_with("###"))
-        .unwrap_or(rest.len());
-    &rest[..end]
-}
-
-/// Which of `names` the reference does not mention as a call.
-fn undocumented(text: &str, names: &[String], skip: &[&str]) -> Vec<String> {
-    names
-        .iter()
-        .filter(|name| !skip.contains(&name.as_str()))
-        .filter(|name| !text.contains(&format!("`.{name}(")) && !text.contains(&format!("{name}(")))
-        .cloned()
-        .collect()
-}
 
 #[test]
-fn every_public_proxy_call_is_in_the_reference() {
-    let text = section("### `Proxy` and `ProxyBuilder`", "##");
-    let missing = undocumented(text, &public_methods(PROXY_RS, "Proxy"), &["builder"]);
-    assert_eq!(
-        missing,
-        Vec::<String>::new(),
-        "public on Proxy, undocumented"
-    );
-}
-
-#[test]
-fn every_public_builder_call_is_in_the_reference() {
-    let text = section("### `Proxy` and `ProxyBuilder`", "##");
-    let missing = undocumented(text, &public_methods(PROXY_RS, "ProxyBuilder"), &[]);
-    assert_eq!(
-        missing,
-        Vec::<String>::new(),
-        "public on ProxyBuilder, undocumented"
-    );
-}
-
-#[test]
-fn every_field_a_check_carries_is_in_the_reference() {
-    let text = section("### `Check` and `Connect`", "##");
-    let missing = undocumented(text, &public_methods(CHECK_RS, "Check"), &[]);
-    assert_eq!(
-        missing,
-        Vec::<String>::new(),
-        "public on Check, undocumented"
-    );
-}
-
-#[test]
-fn every_public_connect_call_is_in_the_reference() {
-    let text = section("### `Check` and `Connect`", "##");
-    let missing = undocumented(text, &public_methods(CHECK_RS, "Connect"), &[]);
-    assert_eq!(
-        missing,
-        Vec::<String>::new(),
-        "public on Connect, undocumented"
-    );
-}
-
-#[test]
-fn every_public_provider_call_is_in_the_reference() {
-    let text = section("### `Provider` and the module functions", "##");
-    let missing = undocumented(text, &public_methods(PROVIDER_RS, "Provider"), &[]);
-    assert_eq!(
-        missing,
-        Vec::<String>::new(),
-        "public on Provider, undocumented"
-    );
-}
-
-#[test]
-fn every_exported_name_appears_somewhere_in_the_readme() {
-    // The gap that produced this test, measured on this file on 2026-09-08:
-    // eleven of the eighteen exported names appeared nowhere in 450 lines,
-    // including `load`, which is the ordinary way to get the shipped definition,
-    // and `Connect`, whose constructor an example already called.
+fn every_call_the_readme_shows_on_a_proxy_exists() {
+    // Derived from the README text rather than from a list here, for the reason
+    // in the module docs: a list in this file would be a third copy.
     //
-    // Derived from `lib.rs` rather than listed here, for the reason in the
-    // module docs above: a hand-written list would be a third copy.
-    let source = include_str!("../src/lib.rs");
-    let mut exported: Vec<String> = Vec::new();
-    let mut inside = false;
-    for line in source.lines() {
-        if line.starts_with("pub use ") {
-            inside = true;
-        }
-        if inside {
-            for token in line
-                .trim_start_matches("pub use ")
-                .split(|character: char| !character.is_alphanumeric() && character != '_')
-            {
-                let known =
-                    token.chars().next().is_some_and(|first| {
-                        first.is_ascii_uppercase() || first.is_ascii_lowercase()
-                    }) && !["pub", "use", "crate", "check", "error", "provider", "proxy"]
-                        .contains(&token);
-                if known && !exported.contains(&token.to_string()) {
-                    exported.push(token.to_string());
-                }
-            }
-            if line.contains(';') {
-                inside = false;
-            }
+    // The receiver has to be spelled `proxy` for a call to be picked up, which
+    // is what keeps `reqwest::Proxy::all` and `Duration::from_secs` out of the
+    // scan without an allowlist naming them. The `(` requirement is what keeps
+    // `proxy.example.com` out - it appeared in two examples and parsed as a
+    // method called `example` before that condition was added.
+    let mut shown: Vec<String> = Vec::new();
+    let mut rest = README;
+    while let Some(at) = rest.find("proxy.") {
+        rest = &rest[at + "proxy.".len()..];
+        let name: String = rest
+            .chars()
+            .take_while(|character| character.is_alphanumeric() || *character == '_')
+            .collect();
+        if rest[name.len()..].starts_with('(') && !name.is_empty() && !shown.contains(&name) {
+            shown.push(name);
         }
     }
     assert!(
-        exported.len() >= 15,
-        "the export scan found only {exported:?}, so it is reporting on itself"
+        shown.len() >= 5,
+        "found only {shown:?} calls in the README, so the scan is reporting on itself"
     );
-    let missing: Vec<&String> = exported
+
+    let missing: Vec<&String> = shown
         .iter()
-        .filter(|name| !README.contains(name.as_str()))
+        .filter(|name| !PROXY_RS.contains(&format!("pub fn {name}")))
         .collect();
     assert!(
         missing.is_empty(),
-        "exported and absent from the README: {missing:?}"
+        "the README shows calls that are not public on Proxy: {missing:?}"
     );
 }
 
@@ -243,9 +110,6 @@ fn every_internal_anchor_points_at_a_heading_that_exists() {
     // CEO rule 1 for GitHub, relayed 2026-08-25: a production link that goes
     // nowhere gets fixed, not annotated. This file is the crates.io long
     // description, so a dead anchor here is on the package page.
-    //
-    // Ten of them were written by hand on 2026-09-08 in one sitting, which is
-    // the condition under which this check earns its keep.
     let headings: Vec<String> = README
         .lines()
         .filter_map(|line| {

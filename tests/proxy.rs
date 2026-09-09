@@ -430,8 +430,8 @@ values = { filter = [\"medium\", \"high\"] }
 
     #[test]
     fn a_hand_built_definition_goes_through_the_same_checks() {
-        // The builder is the path the README's "any proxy you already have"
-        // example uses, so it cannot be the lenient one.
+        // The builder is the path the README's "Other gateways" example uses
+        // for a proxy from somewhere else, so it cannot be the lenient one.
         let message = provider_error(
             nodemaven::Provider::builder("mine", "My proxy")
                 .known_params(["country"])
@@ -701,8 +701,8 @@ mod the_readme_shows_real_output {
 
     #[test]
     fn a_provider_declaring_nothing_builds_and_refuses_every_parameter() {
-        // The "No account? Any proxy you already have works" snippet. A gateway
-        // nobody has established is `documented`, never `measured`.
+        // The in-place `Provider::builder` snippet under "Other gateways". A
+        // gateway nobody has established is `documented`, never `measured`.
         let mine = Provider::builder("mine", "My proxy").build().unwrap();
         assert!(!mine.is_measured());
         let message = param_error(

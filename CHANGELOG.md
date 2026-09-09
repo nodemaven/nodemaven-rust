@@ -8,6 +8,115 @@ is built on: a claim about what the gateway accepts carries the probe that
 established it and the date it was run. "The vendor's own documentation says so"
 is not one of those, and an entry resting on it says so outright.
 
+## Unreleased
+
+Documentation only. No public item was added, removed or changed, and
+`cargo test --offline` is 135 green before and after - down from 140 because six
+README-reading test cases lost their subject and one replaced them.
+
+**None of this reaches the crates.io page until 0.1.1.** crates.io renders the
+README that was inside the published tarball and never re-reads the file, which
+is the same mechanism that has left the Python package on PyPI without a
+repository link for three versions. The badges below are correct on GitHub today
+and on the package page only after a release.
+
+### The README is a usage document again
+
+It had grown to 485 lines, and roughly a third of them were evidence: a ten-row
+table of what each status code means, a six-CONNECT paragraph about sending
+`city` without `region`, a four-round separator probe, a twenty-round parameter
+order probe, and a six-row retry table over 1464 attempts. Each was true and each
+was in the wrong file. A reader deciding whether to add the dependency wants to
+know what the crate does; the reader who wants the probe behind a claim is a
+different person arriving on purpose. It is now 365 lines - it reached 361 on the
+cut and gained four to the comment described two sections down.
+
+**Nothing measured was deleted, and that was checked rather than assumed.** Every
+finding cut from the README already ships on a surface a user of the crate can
+reach, so the cut removed a second copy and not a fact:
+
+- the status-code meanings are `connect_reactions` in the shipped provider
+  definition, which is what `check()` prints and what `Provider::reaction()`
+  answers from - the README table was a transcription of data the crate carries
+- the parameter-order, ISP, `ttl` case and city findings are in that definition's
+  `notes`, printed by `nodemaven::load("nodemaven")?.notes()`
+- the 1464-attempt retry measurement is in the crate-level documentation, so it
+  is on docs.rs
+
+The API reference table went with them, for a reason specific to this registry:
+crates.io renders the long description and docs.rs renders the reference, and a
+hand-written copy of the second inside the first is a third copy of the contract
+that can only go stale. `missing_docs` is `warn` and `cargo doc` is clean, so
+every exported item is documented where the documentation is derived from the
+code.
+
+### Badges
+
+Three, on GitHub and in the file that becomes the package page: the crates.io
+version, the docs.rs build and the license. All three were fetched on 2026-09-09
+before being added rather than assumed to resolve - `crates.io: v0.1.0`,
+`docs: passing`, `license: MIT`.
+
+Two that a Rust README usually carries are deliberately absent. **There is no CI
+workflow in this repository**, checked the same day both locally and through the
+API, so a build badge would be a permanently broken image. And the repository is
+internal, so a link to it answers 404 to the reader this file is written for.
+Both go in when the thing they point at exists.
+
+One measurement trap worth keeping from that check, **stated wrongly here first
+and corrected the same day**. `https://crates.io/crates/nodemaven` does answer
+404 to a naive request, and this entry originally blamed the `User-Agent`,
+because the retry that got a 200 sent a browser one. The retry changed two
+things. It is the **`Accept` header**: with `Accept: text/html` the page is 200
+and with no `Accept` at all it is 404, at an identical `User-Agent`.
+
+What settles it is the positive control, and the first version had none.
+`https://crates.io/crates/serde` answers **404 the same way** to a request that
+does not ask for HTML. A crate with 500 million downloads is not missing, so the
+404 was never evidence about whether our crate exists - which is precisely the
+claim the check was run to make.
+
+The general form is the one this crate keeps re-learning: an explanation that
+fits was allowed to stand in for a control that would have separated two
+variables. The rule that catches it costs one request - **ask the same question
+about something whose answer you already know.**
+
+### The logo at the top of the README linked to a 404
+
+The banner's `href` was `https://go.nodemaven.com/ghrust`, which redirects once
+to `https://nodemaven.com/404`. That is the first link in the file that becomes
+the crates.io package page, so it is CEO rule 1 in the most expensive location
+available, and it would have shipped with 0.1.1.
+
+It is not a broken shortener. `https://go.nodemaven.com/ghpython`, the same
+pattern in the Python README, answers **200** and lands on
+`nodemaven.com/?utm_source=github&utm_content=nodemaven_python`. The domain is a
+Bitly branded short domain where each slug has to be created by hand, and
+`ghrust` never was - the link was written to match its Python neighbour and
+never fetched.
+
+Fixed by pointing the `href` at the destination the slug would have resolved to,
+with `utm_content=nodemaven_rust`, verified 200. That loses the shortener's
+click count and keeps the campaign attribution, and it is one line to put back
+once somebody creates the slug. A comment above it says so, because the obvious
+tidy for the next editor is to make it match the Python file again.
+
+The logo `src` itself is fine. `raw.githubusercontent.com` answered **429** from
+this host, which is rate limiting and not a dead link; the file is listed in
+`nodemaven/.github` through the API, and that repository is public.
+
+### `tests/readme.rs` went from eight cases to three
+
+Six of them scanned a `## Reference` section that no longer exists. They were not
+dropped for convenience - their subject moved to rustdoc, which is argued in the
+file's own module documentation.
+
+One replaces them, in the opposite direction and better suited to what the README
+now is: `every_call_the_readme_shows_on_a_proxy_exists` derives the calls from
+the README text and requires each to be `pub fn` on `Proxy`. The old form asked
+whether the code was fully documented, which is rustdoc's job. The new form asks
+whether the documentation is true, which is nobody else's.
+
 ## 0.1.0 - 2026-09-08
 
 Published at 19:44:51 UTC, as crates.io recorded it.
