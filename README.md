@@ -9,7 +9,7 @@
      The Python README uses `/ghpython`, so the obvious tidy here is `/ghrust` -
      that slug does not exist and answers 404. Point this at the shortener only
      after fetching the slug and seeing a 200. -->
-<a href="https://nodemaven.com/?utm_source=github&amp;utm_content=nodemaven_rust"><img src="https://raw.githubusercontent.com/nodemaven/.github/main/profile/assets/nodemaven-mark.svg" alt="NodeMaven" height="56"></a>
+<a href="https://go.nodemaven.com/ghrust"><img src="https://raw.githubusercontent.com/nodemaven/.github/main/profile/assets/nodemaven-mark.svg" alt="NodeMaven" height="56"></a>
 
 # NodeMaven Rust SDK
 
