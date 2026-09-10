@@ -44,7 +44,7 @@ part you need before adding the dependency.
 ## Quick start
 
 `login` and `password` are the **Proxy Username and Proxy Password** assigned
-under Proxy Setup in the [dashboard]([https://dashboard.nodemaven.com](https://go.nodemaven.com/githrust)) - a separate
+under Proxy Setup in the [dashboard](https://go.nodemaven.com/githrust) - a separate
 pair from the account you sign in with. The other option there is IP
 whitelisting, which needs no credentials in the username at all; both are
 described in
