@@ -393,7 +393,8 @@ impl ProviderBuilder {
     }
 
     /// Check the definition is internally consistent and hand it over.
-    pub fn build(self) -> Result<Provider> {
+    pub fn build(mut self) -> Result<Provider> {
+        fold_values(&mut self.0);
         check(&self.0, "this definition")?;
         Ok(self.0)
     }
@@ -513,17 +514,36 @@ fn parse(text: &str, provider_id: &str, origin: &str) -> Result<Provider> {
         }
     }
 
+    // Through `crate::check::port_number`, the same rule `ProxyBuilder::build`
+    // and the environment path use, and not through `u16::try_from`.
+    //
+    // `try_from` refuses a negative and refuses 65536 and accepts **0**, which
+    // is the one value that reads as a port and is not one. A definition
+    // carrying `port = 0` used to load here and then die much later against the
+    // zero-check in `proxy.rs`, whose sentence is written for a caller who
+    // passed `port(0)`: it said "The gateway's own port is 0" and told them to
+    // pass `port()`, which is the one thing they had not done. An error that
+    // names the wrong file is worse than no error, because it sends the reader
+    // to edit code that is correct.
+    //
+    // Found 2026-09-11 in an external review of this crate. The same defect was
+    // fixed in the Python SDK on 2026-09-09 by routing the definition's port
+    // through `check._port_number`, and the fix never crossed over - which is
+    // the review's actual finding and is worth more than either bug.
     if let Some(port) = raw.get("port") {
         let number = port.as_integer().ok_or_else(|| {
             Error::Provider(format!(
                 "{origin} gives port as {port:?}, which is not a number."
             ))
         })?;
-        provider.port = Some(u16::try_from(number).map_err(|_| {
+        let checked = crate::check::port_number(&number.to_string()).ok_or_else(|| {
             Error::Provider(format!(
-                "{origin} gives port as {number}, which is not a port."
+                "{origin} gives port as {number}. It has to be a whole number from \
+                 1 to 65535; 0 means \"any free port\" when binding and is meaningless \
+                 when connecting."
             ))
-        })?);
+        })?;
+        provider.port = Some(checked);
     }
 
     if let Some(aliases) = raw.get("aliases") {
@@ -598,6 +618,8 @@ fn parse(text: &str, provider_id: &str, origin: &str) -> Result<Provider> {
         }
     }
 
+    fold_values(&mut provider);
+
     // What each CONNECT status means on this gateway. Keys are the status code
     // as a string, because TOML has no integer keys and JSON has none either -
     // and the golden vectors are JSON, so a schema that used integers here would
@@ -641,6 +663,59 @@ fn parse(text: &str, provider_id: &str, origin: &str) -> Result<Provider> {
 
     check(&provider, origin)?;
     Ok(provider)
+}
+
+/// Fold every legal-values list belonging to a parameter that is folded.
+///
+/// Without this a definition refuses every value it declares legal. The
+/// caller's value is folded in [`ProxyBuilder::param`] before anything looks at
+/// it, and the list was stored as it was typed, so `values = { country = ["US",
+/// "DE"] }` under `normalize = ["country"]` refuses `"US"` and `"us"` alike -
+/// and the message blames the caller for a value the definition went to the
+/// trouble of declaring legal.
+///
+/// Run on both paths that produce a `Provider`, and after the whole definition
+/// is in hand rather than as each key arrives. The TOML parser reads
+/// `normalize` before `values` and would not need the ordering, but
+/// [`ProviderBuilder`]'s setters can be called either way round, and a fold at
+/// [`ProviderBuilder::allowed_values`] would quietly depend on
+/// [`ProviderBuilder::normalize`] having been called first. A rule that holds
+/// only for one call order is the kind of thing this crate exists to not ship.
+///
+/// Folding the stored list rather than folding at the comparison in
+/// `proxy.rs` is deliberate: there is then one folded form in the object, so
+/// the refusal message quotes the strings the check actually compared against
+/// instead of a prettier set nobody tested.
+///
+/// Found 2026-09-11 in an external review of this crate, latent at the time
+/// because the shipped definition has `values = {}` - but `values` is the
+/// documented extension path and [`ProviderBuilder::allowed_values`] is public
+/// API, so it was reachable by anyone writing their own definition. The Python
+/// SDK had the identical defect and fixed it on 2026-09-09; the fix never
+/// crossed over, which is the review's real finding.
+///
+/// The crate's own tests did not catch it and the reason is worth keeping. Both
+/// halves were covered and never together: the `legal_values` module builds a
+/// definition with `values` and no `normalize`, and the fold module exercises
+/// `normalize` against the shipped definition, whose `values` is empty. Each
+/// test silently held the other feature at the value where the defect cannot
+/// appear. It did not slip past the tests, it slipped between them.
+fn fold_values(provider: &mut Provider) {
+    let folded: Vec<(String, Vec<String>)> = provider
+        .values
+        .iter()
+        .filter(|(name, _)| provider.normalizes(name))
+        .map(|(name, legal)| {
+            let legal = legal
+                .iter()
+                .map(|value| provider.normalized(name, value))
+                .collect();
+            (name.clone(), legal)
+        })
+        .collect();
+    for (name, legal) in folded {
+        provider.values.insert(name, legal);
+    }
 }
 
 /// The four ways a definition can be internally inconsistent.

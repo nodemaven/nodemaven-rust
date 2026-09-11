@@ -189,6 +189,54 @@ mod the_port {
         // comes back there. They are in `tests/env.rs`.
         let _: fn(ProxyBuilder, u16) -> ProxyBuilder = ProxyBuilder::port;
     }
+
+    #[test]
+    fn a_definition_that_gives_port_zero_is_refused_at_load() {
+        // The third path into the zero-check, and the comment above the check
+        // named two. Found 2026-09-11 in an external review of this crate: the
+        // parser used `u16::try_from`, which refuses -1 and 65536 and accepts
+        // 0, so the definition loaded and the failure surfaced later against a
+        // message written for a caller who had passed `port(0)`.
+        //
+        // The assertion is on where it fails, not on whether. It failed before
+        // too - one call later, in the wrong file, with a sentence naming the
+        // wrong fix.
+        let message = provider_error(load_str(
+            "label = \"P\"\nknown_params = [\"country\"]\nport = 0\n",
+            "p",
+        ));
+        assert!(message.contains("1 to 65535"), "{message}");
+        assert!(message.contains("any free port"), "{message}");
+    }
+
+    #[test]
+    fn a_definition_that_gives_a_port_out_of_range_is_still_refused() {
+        // The arm `u16::try_from` already got right, kept because the fix
+        // replaced it. A rule moved to a new home has to be shown to still do
+        // what the old one did, or the fix is a trade.
+        for text in [
+            "label = \"P\"\nknown_params = [\"country\"]\nport = 70000\n",
+            "label = \"P\"\nknown_params = [\"country\"]\nport = -1\n",
+        ] {
+            let message = provider_error(load_str(text, "p"));
+            assert!(message.contains("1 to 65535"), "{message}");
+        }
+    }
+
+    #[test]
+    fn the_ports_a_definition_actually_uses_still_load() {
+        // The control, same two edges as the builder case above. A load-time
+        // check that refuses 1 or 65535 would be a worse defect than the one it
+        // replaced, and nothing else in this file would notice.
+        for port in [1u16, 8080, 65535] {
+            let provider = load_str(
+                &format!("label = \"P\"\nknown_params = [\"country\"]\nport = {port}\n"),
+                "p",
+            )
+            .expect("a real port");
+            assert_eq!(provider.port(), Some(port));
+        }
+    }
 }
 
 mod the_url_is_safe_to_hand_to_a_client {
@@ -426,6 +474,121 @@ values = { filter = [\"medium\", \"high\"] }
             "p",
         ));
         assert!(message.contains("non-empty list"), "{message}");
+    }
+
+    /// The two features in one definition, which is the combination every case
+    /// above and every case in `values_are_folded_to_the_form_the_gateway_emits`
+    /// avoids - one holds `normalize` absent, the other holds `values` empty.
+    /// Both were green throughout the period the check refused every value it
+    /// declared legal.
+    const FOLDED_VALUES: &str = "\
+label = \"P\"
+known_params = [\"country\", \"region\"]
+normalize = [\"country\", \"region\"]
+values = { country = [\"US\", \"DE\"], region = [\"District of Columbia\"] }
+";
+
+    #[test]
+    fn a_declared_value_is_accepted_in_the_spelling_the_definition_uses() {
+        // The case the whole entry exists for and the one that was refused: the
+        // list says "US", the caller writes "US", and the fold turns it into
+        // "us" before the comparison. Until 2026-09-11 this was an error whose
+        // text blamed the caller for the definition's own spelling.
+        let provider = load_str(FOLDED_VALUES, "p").unwrap();
+        let proxy = creds()
+            .provider(provider)
+            .param("country", "US")
+            .build()
+            .unwrap();
+        assert_eq!(proxy.username(), "acct-country-us");
+    }
+
+    #[test]
+    fn a_declared_value_is_accepted_in_the_folded_spelling_too() {
+        // The other half, and it was refused by the same bug: folding the
+        // caller's value is a no-op here, and the unfolded list still did not
+        // contain it. Both spellings of a legal value were illegal.
+        let provider = load_str(FOLDED_VALUES, "p").unwrap();
+        let proxy = creds()
+            .provider(provider)
+            .param("country", "us")
+            .build()
+            .unwrap();
+        assert_eq!(proxy.username(), "acct-country-us");
+    }
+
+    #[test]
+    fn the_fold_of_a_declared_value_is_the_full_fold_and_not_just_case() {
+        // `region` carries spaces, so this arm fails if the list is lower-cased
+        // somewhere instead of being put through `Provider::normalized`. The
+        // three steps are one contract across four SDKs and half of it is not
+        // the contract.
+        let provider = load_str(FOLDED_VALUES, "p").unwrap();
+        let proxy = creds()
+            .provider(provider)
+            .param("region", "District of Columbia")
+            .build()
+            .unwrap();
+        assert_eq!(proxy.username(), "acct-region-district_of_columbia");
+    }
+
+    #[test]
+    fn a_value_outside_a_folded_list_is_still_refused() {
+        // The control. Folding the list must not turn the check off: if this
+        // ever passes, the fix has bought the accepting half by giving up the
+        // refusing half, and the entry is decoration.
+        let provider = load_str(FOLDED_VALUES, "p").unwrap();
+        let message = param_error(creds().provider(provider).param("country", "FR").build());
+        assert!(message.contains("is not a value"), "{message}");
+    }
+
+    #[test]
+    fn the_refusal_quotes_the_list_the_check_compared_against() {
+        // The list is folded in the object and not at the comparison, so the
+        // message cannot offer a set of values that is not the set that was
+        // tested. A message quoting "US" after refusing "us" is how a caller
+        // spends an afternoon.
+        let provider = load_str(FOLDED_VALUES, "p").unwrap();
+        let message = param_error(creds().provider(provider).param("country", "FR").build());
+        assert!(message.contains("\"us\""), "{message}");
+        assert!(!message.contains("\"US\""), "{message}");
+    }
+
+    #[test]
+    fn an_unfolded_parameter_keeps_its_list_as_written() {
+        // The negative control for the fold: `filter` is not in `normalize`
+        // anywhere here, so its list must survive untouched. Without this arm,
+        // folding every list unconditionally would pass every case above.
+        let provider = load_str(
+            "label = \"P\"\nknown_params = [\"filter\"]\nvalues = { filter = [\"Medium\"] }\n",
+            "p",
+        )
+        .unwrap();
+        let proxy = creds()
+            .provider(provider)
+            .param("filter", "Medium")
+            .build()
+            .unwrap();
+        assert_eq!(proxy.username(), "acct-filter-Medium");
+    }
+
+    #[test]
+    fn the_builder_folds_its_values_whichever_order_the_setters_are_called_in() {
+        // `allowed_values` before `normalize`. Folding as each setter is called
+        // would make this arm depend on the caller's call order, which is the
+        // reason the fold runs in `build()` and not in the setter.
+        let provider = nodemaven::Provider::builder("mine", "My proxy")
+            .known_params(["country"])
+            .allowed_values("country", ["US"])
+            .normalize(["country"])
+            .build()
+            .unwrap();
+        let proxy = creds()
+            .provider(provider)
+            .param("country", "US")
+            .build()
+            .unwrap();
+        assert_eq!(proxy.username(), "acct-country-us");
     }
 
     #[test]

@@ -439,6 +439,19 @@ impl ProxyBuilder {
         // sends a caller to look at the one thing they got right. `port()` takes
         // a `u16`, so this is the only value the builder path can be wrong
         // about; the environment path is checked above.
+        //
+        // A third path reached this check until 2026-09-11 and the comment above
+        // listed two, which is how it got here: a definition carrying `port = 0`
+        // loaded, because `provider.rs` used `u16::try_from` and `try_from`
+        // accepts zero, and then failed *here*, where every word is addressed to
+        // somebody who called `port(0)`. The message read "The gateway's own
+        // port is 0" - true, and it says the file is wrong while pointing the
+        // reader at the builder. The definition's port now goes through
+        // `check::port_number` at load, so by the time control is here the only
+        // zero left is one the caller passed. Found in an external review of
+        // this crate; the reachable conclusion is the general one, that a
+        // comment enumerating the paths into a check goes stale the moment a
+        // path is added and nothing makes it fail when it does.
         if port == Some(0) {
             return Err(Error::Credentials(format!(
                 "port 0 is not a TCP port: it has to be a whole number from 1 to \

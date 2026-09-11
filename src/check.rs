@@ -12,7 +12,11 @@
 //! inside a nested error and the reason phrase and every response header do
 //! not. On this gateway the reason phrase identifies which back end answered
 //! and one of the headers carries the exit address, so both are worth more than
-//! the convenience of not writing this file.
+//! the convenience of not writing this file. `reqwest` loses the same three
+//! things in the same way: a failed tunnel arrives as an `io::Error` with the
+//! status flattened into its message and every header gone. That sentence was
+//! in the README until 2026-09-10 and moved here, because it explains a design
+//! decision rather than changing how a caller writes their code.
 //!
 //! Like its Python original, this module depends on nothing in the crate except
 //! [`Error`]. The reaction table is passed in as plain data rather than looked
@@ -711,8 +715,12 @@ fn split_address(server: &str) -> Result<(&str, u16)> {
 /// Python SDK's prose and was never written as a rule with one home. The import
 /// across modules is the point rather than a shortcut.
 ///
-/// [`Proxy`] takes a `u16` from the builder, so only zero can be wrong on that
-/// path; the environment path takes text and meets every case below.
+/// Three callers, and they are wrong in different ways. [`Proxy`] takes a `u16`
+/// from the builder, so only zero can be wrong on that path. The environment
+/// path takes text and meets every case below. A provider definition gives an
+/// integer, so only zero and the out-of-range values can reach it - it was the
+/// one caller not using this function until 2026-09-11, it used
+/// `u16::try_from`, and `try_from` accepts zero.
 ///
 /// Three things are refused and each was a defect somewhere before it was a
 /// rule:
