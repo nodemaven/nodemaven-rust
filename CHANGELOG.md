@@ -109,6 +109,21 @@ tests.
 dependency and no test opens a socket, which is the only reason a build this
 strict costs nothing here.
 
+**The first run failed, and on something no local run reports.**
+`clippy::precedence` is an error under `-D warnings` on 1.85 and silent on the
+1.98 clippy this crate has been developed against, so `triple >> 18 & 63` in
+`base64` - three occurrences, written months ago - passed every local gate and
+stopped the build. The shifts are parenthesised now. Rust's precedence agrees
+with the unparenthesised form, so nothing was ever wrong on the wire and the
+test pinning this output against Python's `base64.b64encode` is unchanged.
+
+The finding is the point rather than the fix. Pinning CI to the declared MSRV
+was argued for above as being about whether the crate builds on the version it
+promises; it also turns out to be the only thing here that runs a *different*
+lint set from the developer's machine, and it earned that on its first run. The
+1.85 toolchain is now installed locally, so the same four gates can be run
+before a push instead of after one.
+
 The fourth badge in the README points at this workflow. The comment above the
 badges used to explain why two were missing; it now explains why they arrived,
 because a comment giving a reason that has expired is worse than no comment.

@@ -760,10 +760,20 @@ fn base64(input: &[u8]) -> String {
         let triple = (u32::from(chunk[0]) << 16)
             | (u32::from(chunk.get(1).copied().unwrap_or(0)) << 8)
             | u32::from(chunk.get(2).copied().unwrap_or(0));
-        encoded.push(char::from(BASE64[(triple >> 18 & 63) as usize]));
-        encoded.push(char::from(BASE64[(triple >> 12 & 63) as usize]));
+        // The parentheses around each shift are not decoration and not a style
+        // choice: `clippy::precedence` is an error under the CI's `-D warnings`
+        // on the pinned 1.85 toolchain, and silent on the 1.98 clippy this was
+        // written against. Same source, same flags, two answers - which is the
+        // argument for pinning CI to the MSRV the manifest declares rather than
+        // to stable, found on the workflow's first run on 2026-09-11.
+        //
+        // Rust's precedence agrees with the unparenthesised form, so nothing
+        // here was ever wrong on the wire. The base64 output is pinned against
+        // Python's `base64.b64encode` by a test and it is unchanged.
+        encoded.push(char::from(BASE64[((triple >> 18) & 63) as usize]));
+        encoded.push(char::from(BASE64[((triple >> 12) & 63) as usize]));
         encoded.push(if chunk.len() > 1 {
-            char::from(BASE64[(triple >> 6 & 63) as usize])
+            char::from(BASE64[((triple >> 6) & 63) as usize])
         } else {
             '='
         });
