@@ -5,21 +5,29 @@
      resolves nothing relative, so a relative src is a broken image on the package
      page. `.github` is public, so its raw URL answers 200 to a logged-out
      visitor. -->
-<!-- The href is the destination itself and not a `go.nodemaven.com` short link.
-     The Python README uses `/ghpython`, so the obvious tidy here is `/ghrust` -
-     that slug does not exist and answers 404. Point this at the shortener only
-     after fetching the slug and seeing a 200. -->
+<!-- `/ghrust` did not exist on 2026-09-09 and answered 404, so this href was the
+     destination itself; the slug was created and both were re-fetched on
+     2026-09-10: `/ghrust` 302s to nodemaven.com and `/githrust`, used in Quick
+     start, 302s to the dashboard. Two slugs, two destinations, not a typo. The
+     rule that produced the 404 stands - a URL written by analogy with a working
+     one is not a check, so fetch any new slug before it ships. -->
 <a href="https://go.nodemaven.com/ghrust"><img src="https://raw.githubusercontent.com/nodemaven/.github/main/profile/assets/nodemaven-mark.svg" alt="NodeMaven" height="56"></a>
 
 # NodeMaven Rust SDK
 
 **Builds the proxy username a gateway expects, and refuses the input it would silently drop.**
 
-<!-- Three badges, and the two missing ones are deliberate rather than forgotten.
-     There is no CI workflow for this crate, so a build badge would be a dead
-     image on the package page; the repository is not public, so a link to it
-     would 404 for the reader this file is written for. Both go in when the thing
-     they point at exists. -->
+<!-- Four badges now. This comment said "three, and the two missing ones are
+     deliberate" - no CI workflow to point a build badge at, and a repository
+     that was internal and would have 404'd for the reader this file is written
+     for. Both of those stopped being true on 2026-09-11: the user made the
+     repository public and a workflow landed the same day, so the badge goes in
+     with the thing it points at rather than ahead of it.
+
+     The crates.io and docs.rs badges render from the published tarball and lag
+     a release, so all four are correct on GitHub the moment this is pushed and
+     on the package page only after the version that carries them ships. -->
+[![CI](https://github.com/nodemaven/nodemaven-rust/actions/workflows/ci.yml/badge.svg)](https://github.com/nodemaven/nodemaven-rust/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/nodemaven.svg)](https://crates.io/crates/nodemaven)
 [![docs.rs](https://docs.rs/nodemaven/badge.svg)](https://docs.rs/nodemaven)
 [![license](https://img.shields.io/crates/l/nodemaven.svg)](#license)
@@ -82,10 +90,9 @@ proxy.username();     // the username on its own
 proxy.server();       // host:port, no credentials
 ```
 
-`url()` percent-encodes both halves; `browser()` does not, because Playwright,
-Patchright, Puppeteer and chromiumoxide take the three fields separately and
-encode them themselves. Encoding twice turns `pa/ss` into `pa%252Fss` and
-authentication fails while blaming the credentials.
+`url()` encodes the credentials for use in a URL; `browser()` returns them raw,
+because a browser driver takes the three fields separately and encodes them
+itself.
 
 ## Parameters
 
@@ -105,17 +112,13 @@ against the gateway rather than transcribed:
 | `speed` | claims a connection speed class | `fast`, `slow` |
 | `ipv4` | claims to force IPv4 | `true` |
 
-`ipv4` and `speed` are recognised names whose effect is unmeasured, and the table
-says `claims to` for that reason.
+`ipv4` and `speed` are accepted by the gateway, but their effects have not been
+independently verified, and the table says `claims to` for that reason.
 
-**Names are validated. Values, on this gateway, are not.** A name that is not in
-this table fails before anything is sent, because the gateway answers an unknown
-name with 200 and drops the setting. Values are passed through: what is known is
-which ones have been *observed* to work, which is not the set the gateway
-accepts, and refusing on a guessed list would block a setting that would have
-worked. A gateway definition may declare the legal values for a parameter and
-then anything outside them is refused; the shipped one leaves that list empty
-for every parameter, deliberately.
+**Parameter names are validated locally; values are passed through** unless a
+gateway definition constrains them. A name that is not in this table fails
+before anything is sent, because the gateway answers an unknown name with 200
+and drops the setting.
 
 A value is written with `Display`, so `.param("ipv4", true)` produces `ipv4-true`
 and `.param("port_hint", 8080)` produces `port_hint-8080` without a cast.
@@ -136,15 +139,12 @@ Proxy::builder().login("u").password("p")
 Which parameters fold is declared in the gateway definition, as data, so a
 gateway you describe yourself folds what you say it folds and nothing else.
 
-**`sid`, `filter`, `ttl` and `speed` are sent with their case unchanged.** `sid`
-is yours, and folding an identifier a caller chose would rename their session.
-For the other three, pass lower case - and for `ttl` that is not advice, because
-`ttl-10m` opens the tunnel where `ttl-10M` is answered `407`, which reads as a
-credentials problem and is not one.
+**`sid`, `filter`, `ttl` and `speed` are sent with their case unchanged**, so
+pass those in lower case. `sid` is yours, and folding an identifier a caller
+chose would rename their session.
 
 **Every value not folded is refused if it contains whitespace.** There is no
-spelling of a space that works here: `username()` would emit it raw, `url()`
-would percent-encode it to `%20`, and a browser driver would send a third thing.
+spelling of a space that reaches this gateway intact.
 
 ## Sticky sessions
 
@@ -154,12 +154,10 @@ One `Proxy` is one identity. Pin it to a sticky session:
 let held = proxy.session("order4417")?;
 ```
 
-**A session id cannot contain the character the gateway separates parameters
-with**, which for this one is `-`, and passing one returns an error rather than
-connecting. The gateway cuts the value at the separator and reads the rest as
-something else, so without that refusal every order id sharing a prefix would
-quietly land on one session and one exit. The same cut applies to every
-parameter, which is why `.param()` refuses a separator in any value.
+**A session id cannot contain the gateway's separator**, which for this one is
+`-`, and the builder returns an error rather than connecting. The gateway cuts a
+value at its separator, so this applies to every parameter and not only to
+`sid`.
 
 **The session key is the whole parameter set, not the session id.** `country=us,
 sid=A` and `country=us, sid=A, filter=medium` are two different sessions, so
@@ -236,19 +234,15 @@ println!("{result}");
 200 Connection established via gate.nodemaven.com:8080 in 0.42s, exit 203.0.113.7
 ```
 
-The exit address arrives on the CONNECT reply itself, on a header the gateway
-definition names, so knowing where you came out costs one handshake and no
-traffic through the tunnel. **Do not build anything on it being there** - more
-than one implementation answers behind this hostname, they do not agree about
-the header, and some send no address at all, so `exit_ip()` is `None` more often
-than the definition suggests. If you need it every time, read it through the
-tunnel from a service that echoes it.
+The exit address arrives on the CONNECT reply itself, so knowing where you came
+out costs one handshake and no traffic through the tunnel. **Handle `exit_ip()`
+being `None`** - more than one implementation answers behind this hostname and
+they do not agree about the header. If you need it every time, read it through
+the tunnel from a service that echoes it.
 
-**A refusal is a value, not an `Err`.** The status code is the thing you came
-for, and a general HTTP client buries it - `reqwest` reports a failed tunnel as
-an `io::Error` with the status flattened into its message and every header gone.
-So a refused tunnel comes back as `Ok(Check)`, carrying the gateway's own reading
-of its own status code:
+**A refusal is a value, not an `Err`.** A refused tunnel comes back as
+`Ok(Check)` carrying the gateway's own reading of its own status code, because
+the status code is the thing you came for and a general HTTP client buries it:
 
 ```text
 407 Proxy Authentication Required via gate.nodemaven.com:8080 in 0.19s
@@ -276,15 +270,12 @@ timeout would report that as a network problem.
 
 ## What this crate does not do
 
-**It does not retry.** Retrying a refused request is the thing that most reliably
-makes the next one worse: each retry confirms automation to the target and burns
-the exit range for everyone else sharing the pool, and a session already several
-failures deep is spending roughly a hundred attempts per delivered page against
-under two in a healthy one. The measurement behind that, and the harness that
-produced it, are open source at
+**It does not retry.** Retry policy belongs to the caller, and ours measured
+that repeated failures correlate with sharply worse outcomes - a session several
+failures deep spends roughly a hundred attempts per delivered page against under
+two in a healthy one. The harness behind that number is open source at
 [nodemaven/proxy-benchmark](https://github.com/nodemaven/proxy-benchmark), so it
-can be re-run rather than believed. A crate shipping automatic retry as a default
-would be spending that on your behalf without telling you.
+can be re-run rather than believed.
 
 It also does not own an HTTP client, a connection pool or a browser, and it
 brings no async runtime with it. Those are yours, and they are better than
@@ -319,39 +310,16 @@ let proxy = Proxy::builder()
 proxy.session("order4417")?;     // u-country-us-session-order4417
 ```
 
-Or build one in place, which is also what to do when you have a proxy from
-somewhere else and no definition for it:
-
-```rust
-use nodemaven::{Provider, Proxy};
-
-// No known_params is not a stub. It says nobody has established what this
-// gateway recognises, so every parameter is refused rather than sent to be
-// silently dropped.
-let mine = Provider::builder("mine", "My proxy").build()?;
-
-let proxy = Proxy::builder()
-    .provider(mine)
-    .login("your-login")
-    .password("your-password")
-    .host("proxy.example.com")
-    .port(8000)
-    .build()?;
-```
-
-`known_params` is the whole point of the file: name a parameter that is not in it
-and the build fails instead of connecting.
+`Provider::builder` does the same thing in code, for a proxy you have no
+definition for. An empty `known_params` is not a stub: it says nobody has
+established what that gateway recognises, so every parameter is refused rather
+than sent to be dropped in silence.
 
 Credentials fall back to the environment under the definition's id in upper case,
 so the file above reads `MY_GATEWAY_LOGIN` and `MY_GATEWAY_PASSWORD` and never
 `NODEMAVEN_*`. One process can hold several gateways without their credentials
 reaching each other. **The id comes from the filename, not from the variable you
 bind it to** - use `load_file_as` to state it outright.
-
-Every definition carries a `status`. `measured` means traffic has gone through
-that gateway and the dialect was read off the wire; `documented` means it was
-transcribed and never exercised. Only `nodemaven` is shipped here, and it is
-`measured`.
 
 ## Requirements
 

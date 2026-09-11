@@ -1,12 +1,13 @@
 [package]
 name = "nodemaven"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 rust-version = "1.85"
 description = "Build and validate proxy connection strings. No transport, no retries."
 license = "MIT"
 readme = "README.md"
 homepage = "https://nodemaven.com"
+repository = "https://github.com/nodemaven/nodemaven-rust"
 keywords = ["proxy", "scraping", "http-proxy", "playwright", "residential"]
 categories = ["network-programming", "web-programming::http-client"]
 
@@ -41,18 +42,21 @@ include = [
     "LICENSE",
 ]
 
-# `repository` is absent on purpose, and the reason changed on 2026-09-08
-# without the decision changing. It used to be that no repository existed. One
-# does now - `nodemaven/nodemaven-rust` - and it is internal, so its URL answers
-# 404 to a logged-out visitor exactly as a missing one does, and the crates.io
-# sidebar would carry a dead link either way.
+# `repository` above was absent through 0.1.0 and arrives here, 2026-09-11. It
+# was held back under CEO rule 1 - a production link that goes nowhere gets
+# removed or fixed - because the repository was internal and its URL answered 404
+# to a logged-out visitor exactly as a missing one does. The user made
+# `nodemaven/nodemaven-rust` public, verified the same day rather than taken on
+# trust: `gh api repos/nodemaven/nodemaven-rust --jq .visibility` answers
+# `public`, `"private": false`.
 #
-# The cost of deferring it is known rather than assumed, and it is not zero.
-# crates.io bakes this table into each published version and never re-reads it,
-# so this key cannot be added to 0.1.0 afterwards - it arrives with 0.1.1 and
-# nothing before that release will show it. The same mechanism has left the
-# Python package on PyPI for three versions with no `Repository` link, and
-# making that source repository public did not change its page by one character.
+# 0.1.0 does not get it and cannot. crates.io bakes this table into each
+# published version and never re-reads it, so the sidebar of 0.1.0 has no source
+# link forever, and the 13 downloads it already had saw a page without one. The
+# same mechanism left the Python package on PyPI without a `Repository` link for
+# three versions, and making that repository public did not change its page by
+# one character - only the release after it did. That is the whole cost of
+# deferring this key and it was known when it was deferred.
 #
 # `documentation` is absent for a different reason and permanently: crates.io
 # defaults it to docs.rs, and overriding that with the docs site would replace a

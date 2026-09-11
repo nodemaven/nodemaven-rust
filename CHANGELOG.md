@@ -8,17 +8,110 @@ is built on: a claim about what the gateway accepts carries the probe that
 established it and the date it was run. "The vendor's own documentation says so"
 is not one of those, and an entry resting on it says so outright.
 
-## Unreleased
+## 0.1.1 - 2026-09-11
 
-Documentation only. No public item was added, removed or changed, and
-`cargo test --offline` is 135 green before and after - down from 140 because six
-README-reading test cases lost their subject and one replaced them.
+**This section said "Documentation only" until 2026-09-11 and it is not any
+more:** two defects were found in an external review of this crate and are fixed
+below. No public item was added, removed or changed - every signature is what
+0.1.0 shipped - but a definition that used to load now fails, and a parameter
+value that used to be refused is now accepted, so this is behaviour and not
+prose. The line is corrected rather than replaced, because "documentation only"
+is the label under which a behavioural change gets released without anybody
+reading the diff.
 
-**None of this reaches the crates.io page until 0.1.1.** crates.io renders the
-README that was inside the published tarball and never re-reads the file, which
-is the same mechanism that has left the Python package on PyPI without a
-repository link for three versions. The badges below are correct on GitHub today
-and on the package page only after a release.
+The README cut that the rest of this section describes took
+`cargo test --offline` from 140 green to 135, six README-reading cases having
+lost their subject and one having replaced them. The two fixes add ten, so it is
+**145 green**. Seven of the ten fail against the source as it stood before them,
+checked by reverting `src/provider.rs` alone and keeping the tests; the other
+three are controls and pass on both sides, which is what a control is for.
+
+### A definition refused every value it declared legal
+
+`values = { country = ["US", "DE"] }` alongside `normalize = ["country"]` was a
+closed list nothing could satisfy. A caller's value is folded before it is
+checked - `"US"` becomes `"us"` - and the list was stored exactly as the file
+spelled it, so `"US"` and `"us"` were both outside it, and the refusal named the
+caller's value as the problem.
+
+The fold now runs over the legal-values lists too, once, on both paths that
+produce a `Provider`. In `ProviderBuilder::build` rather than in
+`ProviderBuilder::allowed_values`, so the result does not depend on whether the
+caller called `normalize` before or after it. The stored list is folded rather
+than the comparison, so the message that lists the legal values quotes the
+strings the check actually compared against.
+
+It was latent in the shipped definition, whose `values` is `{}`. It was not
+latent for anybody writing their own: `values` is the documented extension path
+and `ProviderBuilder::allowed_values` is public API.
+
+Two things here are worth more than the fix. The identical defect was found and
+fixed in the Python SDK on 2026-09-09 and the fix did not cross over - there is
+no procedure for carrying a correction between the SDKs, and there are going to
+be four of them. And this crate's own tests covered both halves and never
+together: the `legal_values` cases build a definition with `values` and no
+`normalize`, and the fold cases run `normalize` against the shipped definition,
+whose `values` is empty. Each silently held the other feature at the value where
+the defect cannot appear. It did not get past the tests, it went between them.
+
+### `port = 0` in a definition loaded and then blamed the caller
+
+The parser used `u16::try_from`, which refuses `-1` and `65536` and accepts `0`.
+The definition loaded, and the failure arrived later at the zero-check in
+`proxy.rs`, whose every word is addressed to somebody who called `port(0)`. It
+said "The gateway's own port is 0" - true - and told the reader to pass
+`port()`, which is the one thing they had not done. An error naming the wrong
+file is worse than no error, because it sends the reader to edit code that is
+correct.
+
+The definition's port now goes through `check::port_number`, the same rule the
+builder and the environment use, and the message names the definition. That rule
+is `pub(crate)` precisely so it has one home; this was its third implementation.
+
+Also fixed in the Python SDK on 2026-09-09, also never carried across. The
+comment above the zero-check enumerated the paths that reach it and listed two
+of the three, which is how the third arrived unnoticed: a comment counting the
+callers of a check goes stale the moment a caller is added, and nothing makes it
+fail when it does.
+
+**This release is what puts the last three weeks of README work on the package
+page.** crates.io renders the README that was inside the published tarball and
+never re-reads the file, so everything below sat correct on GitHub and invisible
+on crates.io until now. Said here as a prediction while this section was headed
+`Unreleased`, and kept rather than deleted: it is the same mechanism that left
+the Python package on PyPI without a repository link for three versions, and the
+release that fixed that one is the evidence it is real.
+
+### The package page has a source link
+
+`repository = "https://github.com/nodemaven/nodemaven-rust"` is in the manifest.
+It was held out of 0.1.0 under CEO rule 1, because the repository was internal
+and its URL answered 404 to a logged-out reader exactly as a missing one does.
+The user made it public on 2026-09-11, verified through the API rather than
+taken on trust, and the key went in with the first release after that.
+
+**0.1.0 does not get it and cannot.** crates.io bakes the manifest into each
+published version, so that page carries no source link forever, and the
+downloads it already had saw it that way. `documentation` stays out permanently
+and for a different reason: crates.io defaults it to docs.rs, and pointing it at
+the docs site would replace a generated API reference with prose that is not one.
+
+### CI
+
+`.github/workflows/ci.yml`: fmt, clippy with `-D warnings`, the test suite,
+`cargo doc` with `RUSTDOCFLAGS: -D warnings`, and `cargo package --list`. Pinned
+to `1.85`, the MSRV the manifest declares, rather than to stable - building on
+stable says nothing about the version the crate promises, and a declared MSRV
+that does not build is a promise only the reader stuck on that toolchain ever
+tests.
+
+`--locked` throughout, against the committed `Cargo.lock`. There is one
+dependency and no test opens a socket, which is the only reason a build this
+strict costs nothing here.
+
+The fourth badge in the README points at this workflow. The comment above the
+badges used to explain why two were missing; it now explains why they arrived,
+because a comment giving a reason that has expired is worse than no comment.
 
 ### The README is a usage document again
 

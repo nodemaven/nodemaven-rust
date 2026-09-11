@@ -1,0 +1,65 @@
+# The four gates this crate is developed against, run on somebody else's machine.
+#
+# The point is not that they pass here - they pass locally too. It is that
+# `--offline` and `--locked` are enforced by a host with no warm cargo registry
+# and no `target/`, so "it works on this machine" stops being the claim. This
+# crate has one dependency and a test suite that opens no socket, which is the
+# only reason a build this strict is cheap.
+#
+# `cargo doc` is a gate and not a nicety: `missing_docs` is `warn` in the
+# manifest and `RUSTDOCFLAGS: -D warnings` is what turns that into a failure, so
+# a public item shipped without documentation stops the build rather than
+# reaching docs.rs bare.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci-ok:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned to the MSRV the manifest declares rather than to stable. Building
+      # on stable proves nothing about `rust-version = "1.85"`, and a crate that
+      # declares an MSRV it does not build on is a broken promise that only the
+      # user who is stuck on that toolchain ever discovers.
+      - name: Install the declared MSRV
+        run: |
+          rustup toolchain install 1.85 --profile minimal --component rustfmt,clippy
+          rustup default 1.85
+
+      - name: Versions
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Format
+        run: cargo fmt --check
+
+      - name: Clippy
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+      - name: Docs
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --locked --no-deps
+
+      # The list, not the count. A publish is permanent and this is the last
+      # automated place anything unwanted can be seen leaving: the `include`
+      # allowlist in Cargo.toml is what bounds the tarball, and `.gitignore` is
+      # not. Printed rather than asserted against a fixed list, because a golden
+      # file here would be one more thing to update and would fail for the right
+      # reason only by accident.
+      - name: What a publish would contain
+        run: cargo package --list --locked
