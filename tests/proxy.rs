@@ -1252,7 +1252,46 @@ mod sessions {
         assert_eq!(sid(&proxy), "seed");
         for identity in batch {
             assert!(identity.username().starts_with("acct-country-us-sid-"));
+            assert_ne!(sid(&identity), "seed", "the existing sid was not replaced");
         }
+    }
+
+    #[test]
+    fn a_separator_that_is_a_hex_digit_is_never_drawn() {
+        // Found in review 2026-09-29: an id containing the separator was handed
+        // to `session()`, which refused it, so `sessions()` failed at random.
+        let provider = load_str(
+            "label = \"P\"
+known_params = [\"sid\"]
+session_param = \"sid\"
+             separator = \"a\"
+pair_separator = \"a\"
+",
+            "p",
+        )
+        .unwrap();
+        let proxy = creds().provider(provider).build().unwrap();
+        let batch = proxy.sessions(200).unwrap();
+        assert_eq!(batch.len(), 200);
+        assert!(batch.iter().all(|identity| !sid(identity).contains('a')));
+    }
+
+    #[test]
+    fn a_space_the_separator_shrinks_below_the_count_is_refused_not_looped() {
+        // Length 1 with separator "0" leaves 225 usable ids of 256, so 255
+        // passes the size bound and could never finish without the draw cap.
+        let provider = load_str(
+            "label = \"P\"
+known_params = [\"sid\"]
+session_param = \"sid\"
+             separator = \"0\"
+pair_separator = \"0\"
+",
+            "p",
+        )
+        .unwrap();
+        let proxy = creds().provider(provider).build().unwrap();
+        assert!(sessions_error(proxy.sessions_of_length(255, 1)).contains("Raise the length"));
     }
 
     #[test]

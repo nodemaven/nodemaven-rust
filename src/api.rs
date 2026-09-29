@@ -742,9 +742,9 @@ impl Client {
         let Value::Object(mut object) = answer else {
             return Ok(answer);
         };
-        if !object.contains_key("payload") {
-            return Ok(Value::Object(object));
-        }
+        // Checked before `payload` is looked for: a `success: false` with no
+        // payload is the same disagreement, and it used to come back as a
+        // result. Found in review 2026-09-29, in both SDKs.
         if object.get("success") == Some(&Value::Bool(false)) {
             let reason = detail(Some(&Value::Object(object.clone())));
             return Err(Error::Api {
@@ -760,7 +760,10 @@ impl Client {
                 ),
             });
         }
-        Ok(object.remove("payload").unwrap_or(Value::Null))
+        match object.remove("payload") {
+            Some(payload) => Ok(payload),
+            None => Ok(Value::Object(object)),
+        }
     }
 
     fn request(
@@ -1028,8 +1031,20 @@ fn interpret(status: u16, raw: &[u8], method: &str, url: &str) -> Result<Value> 
 
     if (200..300).contains(&status) {
         if text.is_empty() {
-            // 204 and an empty 200 are real answers to a DELETE.
-            return Ok(Value::Object(Map::new()));
+            // 204 and an empty 200 are real answers to a DELETE, and to nothing
+            // else here: every other call is answered with a JSON body, so an
+            // empty one on a GET would otherwise become `{}` or an empty page
+            // and read as "nothing there". Narrowed in review 2026-09-29.
+            if method == "DELETE" {
+                return Ok(Value::Object(Map::new()));
+            }
+            return Err(Error::Api {
+                status: Some(status),
+                message: format!(
+                    "{where_} answered {status} with an empty body where JSON was \
+                     expected, so there is nothing to read the answer from."
+                ),
+            });
         }
         return parsed.ok_or_else(|| {
             let what = if text.starts_with('<') {

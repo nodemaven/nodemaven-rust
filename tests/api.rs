@@ -200,9 +200,21 @@ mod errors {
     }
 
     #[test]
-    fn an_empty_2xx_is_an_answer() {
+    fn an_empty_2xx_is_an_answer_to_a_delete_and_to_nothing_else() {
         let (api, _) = client(vec![(204, "")]);
         assert_eq!(api.delete_sub_user(9).unwrap(), json!({}));
+        let (api, _) = client(vec![(200, "")]);
+        assert!(api_error(api.me()).1.contains("empty body"));
+        let (api, _) = client(vec![(200, "")]);
+        assert!(api_error(api.countries(&[])).1.contains("empty body"));
+    }
+
+    #[test]
+    fn success_false_is_an_error_with_or_without_a_payload() {
+        let (api, _) = client(vec![(200, r#"{"success": false, "description": "no"}"#)]);
+        assert!(api_error(api.delete_sub_user(9))
+            .1
+            .contains("success=false"));
     }
 
     #[test]
@@ -281,6 +293,26 @@ mod iterate {
         let rows: Vec<Value> = api.iterate(first).collect::<Result<_, _>>().unwrap();
         assert_eq!(rows, vec![json!(1), json!(2)]);
         assert_eq!(calls.lock().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn a_next_link_to_another_host_is_refused_and_nothing_is_sent_there() {
+        // The guard that keeps the key from a host the server names. The
+        // transport records every request, so a second one would show up.
+        let (api, calls) = client(vec![(
+            200,
+            r#"{"results": [1], "next": "https://evil.example/api/v2/base/locations/countries/?offset=1"}"#,
+        )]);
+        let first = api.countries(&[]).unwrap();
+        let error = api.iterate(first).find_map(Result::err).unwrap();
+        assert!(error.to_string().contains("evil.example"), "{error}");
+        assert!(
+            error.to_string().contains("refusing to send the API key"),
+            "{error}"
+        );
+        let calls = calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert!(!calls[0].1.contains("evil.example"));
     }
 
     #[test]

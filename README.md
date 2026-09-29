@@ -352,8 +352,8 @@ for problem in client.validate(&proxy)? {
 A `2xx` whose body is not JSON is an error: the API host answers a path it does
 not serve with `200` and its web page. The built-in transport follows no
 redirect, because the key travels in a header, and reads no proxy from the
-environment. To use your own HTTP client, pass any function of
-`(method, url, headers, body) -> io::Result<(status, body)>` to
+environment. To use your own HTTP client, pass any owned, thread-safe function
+of `(method, url, headers, body) -> io::Result<(status, body)>` to
 `Client::builder().transport(...)`, and build without the default `http`
 feature if you want no TLS stack compiled in.
 

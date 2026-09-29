@@ -30,7 +30,13 @@ What a caller should know, all measured on the Python side:
   does not serve with `200` and its web page.
 - A page is capped at 1000 rows; `iterate()` walks the rest, stops on an empty
   page, advances by the rows returned, and refuses a server that ignores the
-  cursor. `isp_cities()` pages at 100, because 1000 rows take about 56 seconds.
+  cursor. It stops with an error after 100 pages rather than returning a
+  truncated list; raise the bound with `Pages::max_pages()` for a larger
+  collection. `isp_cities()` pages at 100, because 1000 rows take about 56
+  seconds.
+- An empty `2xx` is an answer only to a `DELETE`; on any other call it is
+  `Error::Api`. A `2xx` carrying `success: false` is an error whether or not it
+  has a `payload`.
 - Statistics dates are `dd-mm-yyyy`.
 
 Four error variants arrive with it - `Api`, `Auth`, `NotFound`, `RateLimit` -
@@ -43,8 +49,9 @@ feature.** It follows no redirect - the key travels in a header - and reads no
 proxy from the environment. Both are pinned by tests over a loopback socket, and
 the second test had to clear `NO_PROXY`: on the machine it was written on, a
 local VPN client sets `HTTPS_PROXY` and exempts loopback, so the first version
-passed with the guard removed. Any `Fn(method, url, headers, body) ->
-io::Result<(status, body)>` can replace the transport, and
+passed with the guard removed. Any `Fn(&str, &str, &[(String, String)], Option<&[u8]>) ->
+io::Result<(u16, Vec<u8>)> + Send + Sync + 'static` - owned and thread-safe,
+since the client holds it - can replace the transport, and
 `default-features = false` compiles it out along with `ring`.
 
 Writing this port found a defect in the Python SDK: its default transport
@@ -57,7 +64,10 @@ the same day.
 hexadecimal characters from the operating system's random source -
 and `sessions_of_length(n, bytes)` sets the length. Distinct within one call;
 a count at or above the size of the id space is refused rather than looped on.
-The same checks as the Python SDK's `sessions(n, length=6)`.
+An id containing the provider's separator is skipped rather than refused, so a
+definition that separates on a hexadecimal digit still works, and the draws are
+capped so a space the separator shrinks below the count ends in an error. The
+same checks as the Python SDK's `sessions(n, length=6)`.
 
 ### Dependencies
 

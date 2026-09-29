@@ -299,10 +299,29 @@ impl Proxy {
         }
         // Rejection rather than trust: a collision does not fail, it hands two
         // workers one exit and looks like a working program.
+        //
+        // A definition may separate on a hexadecimal character, and an id
+        // carrying it would be refused by `session()` - so such draws are
+        // skipped, found in review 2026-09-29. Skipping shrinks the space below
+        // what the bound above assumed, so the draws are capped too: without a
+        // cap, `sessions_of_length(255, 1)` on a gateway separating on `0` would
+        // loop forever over the 225 ids it can still produce.
+        let separators = [self.provider.separator(), self.provider.pair_separator()];
         let mut seen = std::collections::BTreeSet::new();
         let mut out = Vec::with_capacity(count);
         let mut bytes = vec![0u8; length];
+        let cap = count.saturating_mul(1000).saturating_add(1000);
+        let mut draws = 0usize;
         while out.len() < count {
+            draws += 1;
+            if draws > cap {
+                return Err(Error::Param(format!(
+                    "drew {cap} session ids of {} hex characters and found only {} that \
+                     avoid the separators {separators:?}. Raise the length.",
+                    2 * length,
+                    out.len()
+                )));
+            }
             getrandom::fill(&mut bytes).map_err(|error| {
                 Error::Param(format!(
                     "the operating system's random source failed ({error}), so no \
@@ -310,6 +329,12 @@ impl Proxy {
                 ))
             })?;
             let id = hex(&bytes);
+            if separators
+                .iter()
+                .any(|sep| !sep.is_empty() && id.contains(sep))
+            {
+                continue;
+            }
             if seen.insert(id.clone()) {
                 out.push(self.session(&id)?);
             }
