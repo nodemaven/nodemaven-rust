@@ -128,12 +128,16 @@ impl Check {
 
     /// The reason phrase, verbatim and not normalised - not even for case.
     ///
-    /// On the shipped gateway this identifies which back end answered: measured
-    /// 2026-08-13, a 200 carrying `X-Proxy-Exit-IP` arrives as
-    /// `Connection established`, while the ones that arrive as `OK` or
-    /// `Connection Established` do not carry it. Any per-implementation number
-    /// has to be split on this rather than pooled, so it is preserved byte for
-    /// byte.
+    /// On the shipped gateway this identifies which back end answered:
+    /// `Connection established` carries `X-Proxy-Exit-IP`, and `OK` carries
+    /// `X-Exit-IP` beside `X-Exit-Country`, `X-Exit-Timezone` and `X-Exit-ASN`
+    /// (2026-09-10). A third phrase, `Connection Established`, has been seen and
+    /// its header set has not. Any per-implementation number has to be split on
+    /// this rather than pooled, so it is preserved byte for byte.
+    ///
+    /// Until 2026-09-29 this said that `OK` replies do not carry the address.
+    /// That was read on 2026-08-13 by an instrument that looked for one header
+    /// name, so it measured the search and not the gateway.
     pub fn reason(&self) -> &str {
         &self.reason
     }
@@ -173,10 +177,11 @@ impl Check {
 
     /// The exit address, when the gateway sent one.
     ///
-    /// Read off whatever header the provider definition declares. `None` is
-    /// normal rather than an error - on the shipped gateway only one of at least
-    /// three back ends sends it, which is the same measurement that made
-    /// [`Check::reason`] worth keeping verbatim.
+    /// Read off the first of the provider definition's `exit_ip_header` names
+    /// that the reply carried. `None` is normal rather than an error: in a
+    /// 2026-09-08 sample of eight `200` replies, one carried no address under
+    /// either name. It means only that none of the declared names was present -
+    /// read [`Check::headers`] before concluding the reply had no address.
     pub fn exit_ip(&self) -> Option<&str> {
         self.exit_ip.as_deref()
     }

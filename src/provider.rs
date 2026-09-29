@@ -755,10 +755,12 @@ fn fold_values(provider: &mut Provider) {
     }
 }
 
-/// The four ways a definition can be internally inconsistent.
+/// The ways a definition can be internally inconsistent.
 ///
 /// Each one describes a declaration that reads like a working setting and can
 /// never fire, which is the class of mistake this crate exists to make loud.
+/// This said "four" over five checks until 2026-09-29, when a sixth arrived;
+/// the list is not counted here any more.
 fn check(provider: &Provider, origin: &str) -> Result<()> {
     let unknown_alias: Vec<&str> = provider
         .aliases
@@ -822,6 +824,17 @@ fn check(provider: &Provider, origin: &str) -> Result<()> {
                 )));
             }
         }
+    }
+
+    // Here and not only in `parse`, so `ProviderBuilder::exit_ip_header("")` is
+    // refused the way `exit_ip_header = ""` in a file is. An empty name matches
+    // no header, so it reads as "this gateway reports its exit address" and
+    // never finds it. Found in review of the change that made this a list.
+    if provider.exit_ip_headers.iter().any(String::is_empty) {
+        return Err(Error::Provider(format!(
+            "{origin} names an empty exit_ip_header. It has to be a header name, \
+             and an empty one can never match."
+        )));
     }
 
     Ok(())

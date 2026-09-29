@@ -814,6 +814,26 @@ mod the_exit_address_header {
     }
 
     #[test]
+    fn a_hand_built_provider_is_held_to_the_same_rule() {
+        // Found in review: the file path refused an empty name while the
+        // builder accepted one, so the two ways of making a provider disagreed.
+        let message = provider_error(
+            nodemaven::Provider::builder("mine", "My proxy")
+                .exit_ip_header("X-Proxy-Exit-IP")
+                .exit_ip_header("")
+                .build(),
+        );
+        assert!(message.contains("exit_ip_header"), "{message}");
+
+        let two = nodemaven::Provider::builder("mine", "My proxy")
+            .exit_ip_header("X-Proxy-Exit-IP")
+            .exit_ip_header("X-Exit-IP")
+            .build()
+            .unwrap();
+        assert_eq!(two.exit_ip_headers(), ["X-Proxy-Exit-IP", "X-Exit-IP"]);
+    }
+
+    #[test]
     fn the_shipped_definition_reads_both_spellings() {
         assert_eq!(
             load("nodemaven").unwrap().exit_ip_headers(),
