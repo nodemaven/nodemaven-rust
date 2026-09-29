@@ -125,15 +125,46 @@ mod what_the_gateway_said {
 
     #[test]
     fn the_reason_phrase_is_kept_verbatim() {
-        // Measured 2026-08-13: on the shipped gateway a 200 carrying the exit
-        // header arrives as `Connection established`, while the ones arriving as
-        // `OK` or `Connection Established` do not carry it. The phrase labels
-        // which back end answered, so normalising it - even just its case -
-        // destroys the only key a per-implementation figure can be split on.
+        // On the shipped gateway the phrase labels which back end answered:
+        // `Connection established` carries `X-Proxy-Exit-IP`, and `OK` carries
+        // `X-Exit-IP` (2026-09-10; the 2026-08-13 reading that `OK` carries no
+        // address came from looking for one name). Normalising the phrase - even
+        // just its case - destroys the only key a per-implementation figure can
+        // be split on.
         let gateway = Gateway::answering(b"HTTP/1.1 200 Connection Established\r\n\r\n");
         let result = connect(&gateway).send().expect("a 200 came back");
         assert_eq!(result.reason(), "Connection Established");
         assert_eq!(result.exit_ip(), None);
+    }
+
+    #[test]
+    fn the_second_name_is_read_when_the_first_is_absent() {
+        // The `OK` back end's spelling, measured 2026-09-10. With one name this
+        // reply came back with no exit address although it carried one.
+        let gateway = Gateway::answering(
+            b"HTTP/1.1 200 OK\r\nX-Exit-IP: 203.0.113.9\r\nX-Exit-Country: US\r\n\r\n",
+        );
+        let result = connect(&gateway)
+            .exit_ip_header("X-Proxy-Exit-IP")
+            .exit_ip_header("X-Exit-IP")
+            .send()
+            .expect("a 200 came back");
+        assert_eq!(result.exit_ip(), Some("203.0.113.9"));
+    }
+
+    #[test]
+    fn the_first_name_present_wins() {
+        let gateway = Gateway::answering(
+            b"HTTP/1.1 200 Connection established\r\n\
+              X-Exit-IP: 203.0.113.9\r\n\
+              X-Proxy-Exit-IP: 203.0.113.7\r\n\r\n",
+        );
+        let result = connect(&gateway)
+            .exit_ip_header("X-Proxy-Exit-IP")
+            .exit_ip_header("X-Exit-IP")
+            .send()
+            .expect("a 200 came back");
+        assert_eq!(result.exit_ip(), Some("203.0.113.7"));
     }
 
     #[test]
@@ -983,6 +1014,15 @@ mod proxy_wires_the_provider_in {
         let gateway = Gateway::answering(ESTABLISHED);
         let result = proxy_at(&gateway).check().expect("a 200 came back");
         assert_eq!(result.exit_ip(), Some("203.0.113.7"));
+    }
+
+    #[test]
+    fn check_reads_every_name_the_provider_declares() {
+        // The shipped definition lists both spellings, so `Proxy::connect` has
+        // to hand the whole list down and not only the first entry.
+        let gateway = Gateway::answering(b"HTTP/1.1 200 OK\r\nX-Exit-IP: 203.0.113.9\r\n\r\n");
+        let result = proxy_at(&gateway).check().expect("a 200 came back");
+        assert_eq!(result.exit_ip(), Some("203.0.113.9"));
     }
 
     #[test]
