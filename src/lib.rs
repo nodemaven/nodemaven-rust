@@ -41,11 +41,16 @@
 
 #![forbid(unsafe_code)]
 
+mod api;
 mod check;
 mod error;
 mod provider;
 mod proxy;
 
+pub use crate::api::{
+    Client, ClientBuilder, Page, Pages, Paging, Transport, API_ROOT, BY_OFFSET, BY_PAGE_NUMBER,
+    DEFAULT_API_TIMEOUT, DEFAULT_BASE_URL, DEFAULT_PAGE_SIZE, ISP_CITIES_PAGING, WHITELIST_PAGING,
+};
 pub use crate::check::{Check, Connect, DEFAULT_TARGET, DEFAULT_TIMEOUT};
 pub use crate::error::{Error, Result};
 pub use crate::provider::{

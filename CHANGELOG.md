@@ -10,6 +10,73 @@ is not one of those, and an entry resting on it says so outright.
 
 ## Unreleased
 
+### The account API client
+
+`Client` talks to the dashboard API: `me()`, the nine location catalogues, the
+three statistics endpoints, sub-users with create, update, delete and usage
+reset, and the IP whitelist - the same 22 calls as the Python SDK, plus
+`iterate()` and `validate()`. Ported on 2026-09-29 from the Python client, whose
+paths, paging and deviations from the vendor's OpenAPI document were measured
+against the live API; the shared specification's 21 API cases pass against
+both SDKs.
+
+What a caller should know, all measured on the Python side:
+
+- Responses are `serde_json::Value`, unmodelled. The vendor's document is wrong
+  about several of its own fields.
+- `me()`, `sub_users()`, `create_sub_user()` and `reset_sub_user_usage()` return
+  live proxy passwords.
+- A `2xx` whose body is not JSON is `Error::Api`: the API host answers a path it
+  does not serve with `200` and its web page.
+- A page is capped at 1000 rows; `iterate()` walks the rest, stops on an empty
+  page, advances by the rows returned, and refuses a server that ignores the
+  cursor. It stops with an error after 100 pages rather than returning a
+  truncated list; raise the bound with `Pages::max_pages()` for a larger
+  collection. `isp_cities()` pages at 100, because 1000 rows take about 56
+  seconds.
+- An empty `2xx` is an answer only to a `DELETE`; on any other call it is
+  `Error::Api`. In the sub-user write calls - create, update, delete, usage
+  reset - which unwrap the `{success, payload}` envelope, a `2xx` carrying
+  `success: false` is an error whether or not it has a `payload`. Other calls
+  do not read the flag.
+- Statistics dates are `dd-mm-yyyy`.
+
+Four error variants arrive with it - `Api`, `Auth`, `NotFound`, `RateLimit` -
+with `Error::is_api()` standing in for Python's subclassing and
+`Error::status()` for the HTTP status. None carries the response body, because
+the bodies of this API can hold credentials.
+
+**The built-in transport is `ureq` with `rustls`, behind the default `http`
+feature.** It follows no redirect - the key travels in a header - and reads no
+proxy from the environment. Both are pinned by tests over a loopback socket, and
+the second test had to clear `NO_PROXY`: on the machine it was written on, a
+local VPN client sets `HTTPS_PROXY` and exempts loopback, so the first version
+passed with the guard removed. Any `Fn(&str, &str, &[(String, String)], Option<&[u8]>) ->
+io::Result<(u16, Vec<u8>)> + Send + Sync + 'static` - owned and thread-safe,
+since the client holds it - can replace the transport, and
+`default-features = false` compiles it out along with `ring`.
+
+Writing this port found a defect in the Python SDK: its default transport
+followed redirects and carried the API key to the redirected host. Fixed there
+the same day.
+
+### `Proxy::sessions`
+
+`sessions(n)` returns `n` identities with distinct session ids - 12 lowercase
+hexadecimal characters from the operating system's random source -
+and `sessions_of_length(n, bytes)` sets the length. Distinct within one call;
+a count at or above the size of the id space is refused rather than looped on.
+Ids are drawn from the hex digits minus any one-character separator of the
+provider, so a definition that separates on a hexadecimal digit still works at
+any length, and a request larger than that smaller id space is refused before
+anything is drawn. The
+same checks as the Python SDK's `sessions(n, length=6)`.
+
+### Dependencies
+
+`getrandom` for session ids and `serde_json` for API responses, plus `ureq` under
+the default `http` feature. The crate had one dependency, `toml`, until now.
+
 ### `check()` reads the exit address under both of the gateway's spellings
 
 `exit_ip_header` in a provider definition takes a list of header names as well

@@ -3,7 +3,7 @@ name = "nodemaven"
 version = "0.1.1"
 edition = "2021"
 rust-version = "1.85"
-description = "Build and validate proxy connection strings. No transport, no retries."
+description = "Build and validate NodeMaven proxy connection strings, and call its account API. No retries."
 license = "MIT"
 readme = "README.md"
 homepage = "https://nodemaven.com"
@@ -70,6 +70,23 @@ toml = { version = "1.1", default-features = false, features = [
     "parse",
     "serde",
 ] }
+# The operating system's random source, for `Proxy::sessions`. Nothing else in
+# std offers one; a clock-seeded generator would hand two workers started in the
+# same millisecond the same session ids.
+getrandom = "0.3"
+# The account API's responses are returned as `serde_json::Value`, unmodelled.
+serde_json = "1"
+# The built-in HTTP transport for the account API, behind the `http` feature.
+# rustls rather than native-tls so the build does not depend on the platform's
+# TLS library; it does compile `ring`, which is the reason the feature can be
+# turned off by anybody who only builds usernames.
+ureq = { version = "3", default-features = false, features = ["rustls"], optional = true }
+
+[features]
+default = ["http"]
+# The account API client's built-in transport. Without it, `Client` still works
+# with a transport you pass in; `Proxy`, `check()` and `sessions()` never needed it.
+http = ["dep:ureq"]
 
 [lints.rust]
 missing_docs = "warn"

@@ -1193,3 +1193,167 @@ mod a_definition_cannot_declare_an_impossible_fold {
         assert!(message.contains("Pick one"), "{message}");
     }
 }
+
+mod sessions {
+    //! Ported from the Python SDK's `TestSessions` on 2026-09-29, when
+    //! `sessions()` arrived here. Same cases, same bounds.
+    use super::*;
+
+    fn sessions_error(result: Result<Vec<Proxy>>) -> String {
+        match result {
+            Err(Error::Param(message)) => message,
+            other => panic!("expected a Param error, got {other:?}"),
+        }
+    }
+
+    fn sid(proxy: &Proxy) -> String {
+        proxy
+            .params()
+            .iter()
+            .find(|(name, _)| name == "sid")
+            .map(|(_, value)| value.clone())
+            .expect("a sid")
+    }
+
+    #[test]
+    fn every_identity_is_distinct() {
+        let proxy = creds().param("country", "us").build().unwrap();
+        let batch = proxy.sessions(25).unwrap();
+        let names: std::collections::BTreeSet<String> = batch.iter().map(Proxy::username).collect();
+        assert_eq!(names.len(), 25);
+    }
+
+    #[test]
+    fn the_ids_are_lowercase_hex_and_that_is_load_bearing() {
+        // Hex because a separator inside a session id is cut by the gateway,
+        // and every id sharing the prefix lands on one exit (2026-08-20).
+        let proxy = creds().build().unwrap();
+        for identity in proxy.sessions_of_length(10, 8).unwrap() {
+            let id = sid(&identity);
+            assert_eq!(id.len(), 16);
+            assert!(id.bytes().all(|b| b"0123456789abcdef".contains(&b)), "{id}");
+        }
+    }
+
+    #[test]
+    fn the_default_is_twelve_characters() {
+        let proxy = creds().build().unwrap();
+        assert_eq!(sid(&proxy.sessions(1).unwrap()[0]).len(), 12);
+    }
+
+    #[test]
+    fn the_parent_is_untouched_and_the_parameters_are_kept() {
+        let proxy = creds()
+            .param("country", "us")
+            .param("sid", "seed")
+            .build()
+            .unwrap();
+        let batch = proxy.sessions(3).unwrap();
+        assert_eq!(sid(&proxy), "seed");
+        for identity in batch {
+            assert!(identity.username().starts_with("acct-country-us-sid-"));
+            assert_ne!(sid(&identity), "seed", "the existing sid was not replaced");
+        }
+    }
+
+    #[test]
+    fn a_separator_that_is_a_hex_digit_is_never_drawn() {
+        // Found in review 2026-09-29: an id containing the separator was handed
+        // to `session()`, which refused it, so `sessions()` failed at random.
+        let provider = load_str(
+            "label = \"P\"
+known_params = [\"sid\"]
+session_param = \"sid\"
+             separator = \"a\"
+pair_separator = \"a\"
+",
+            "p",
+        )
+        .unwrap();
+        let proxy = creds().provider(provider).build().unwrap();
+        let batch = proxy.sessions(200).unwrap();
+        assert_eq!(batch.len(), 200);
+        assert!(batch.iter().all(|identity| !sid(identity).contains('a')));
+    }
+
+    #[test]
+    fn a_long_id_with_a_hex_digit_separator_is_still_drawn() {
+        // Found in review: skipping whole ids that carried the separator made
+        // long ids all but impossible - (15/16)^200 for 100 bytes - and the
+        // draw cap refused a valid call. The alphabet now excludes it.
+        let provider = load_str(
+            "label = \"P\"
+known_params = [\"sid\"]
+session_param = \"sid\"
+             separator = \"0\"
+pair_separator = \"0\"
+",
+            "p",
+        )
+        .unwrap();
+        let proxy = creds().provider(provider).build().unwrap();
+        for identity in proxy.sessions_of_length(3, 100).unwrap() {
+            let id = sid(&identity);
+            assert_eq!(id.len(), 200);
+            assert!(!id.contains('0'));
+        }
+    }
+
+    #[test]
+    fn a_space_the_separator_shrinks_below_the_count_is_refused_not_looped() {
+        // Length 1 with separator "0" leaves 225 usable ids of 256, so 255
+        // passes the size bound and could never finish without the draw cap.
+        let provider = load_str(
+            "label = \"P\"
+known_params = [\"sid\"]
+session_param = \"sid\"
+             separator = \"0\"
+pair_separator = \"0\"
+",
+            "p",
+        )
+        .unwrap();
+        let proxy = creds().provider(provider).build().unwrap();
+        assert!(sessions_error(proxy.sessions_of_length(255, 1)).contains("Raise the length"));
+    }
+
+    #[test]
+    fn a_nonsense_count_or_length_is_refused() {
+        let proxy = creds().build().unwrap();
+        assert!(sessions_error(proxy.sessions(0)).contains("no identities"));
+        assert!(sessions_error(proxy.sessions_of_length(1, 0)).contains("length"));
+    }
+
+    #[test]
+    fn the_whole_space_is_refused_and_one_less_is_not() {
+        // The Python version hung on `sessions(257, length=1)` before this
+        // bound existed: rejection sampling cannot draw more distinct values
+        // than there are.
+        let proxy = creds().build().unwrap();
+        assert!(
+            sessions_error(proxy.sessions_of_length(256, 1)).contains("at least the whole space")
+        );
+        assert!(
+            sessions_error(proxy.sessions_of_length(257, 1)).contains("at least the whole space")
+        );
+        let batch = proxy.sessions_of_length(255, 1).unwrap();
+        let ids: std::collections::BTreeSet<String> = batch.iter().map(sid).collect();
+        assert_eq!(ids.len(), 255);
+    }
+
+    #[test]
+    fn the_messages_read_as_sentences() {
+        // Found in review 2026-09-29: three of these strings had lost their `\`
+        // line continuations and carried 18 spaces of source indentation into
+        // the message a caller reads.
+        let proxy = creds().build().unwrap();
+        let message = sessions_error(proxy.sessions_of_length(256, 1));
+        assert!(!message.contains("  "), "{message:?}");
+    }
+
+    #[test]
+    fn a_long_length_does_not_overflow_the_bound() {
+        let proxy = creds().build().unwrap();
+        assert_eq!(proxy.sessions_of_length(2, 64).unwrap().len(), 2);
+    }
+}

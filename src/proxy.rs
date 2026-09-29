@@ -232,6 +232,122 @@ impl Proxy {
         self.with_param(name, session_id)
     }
 
+    /// `count` identities with these parameters and distinct session ids, each
+    /// id 12 hexadecimal characters. See [`Proxy::sessions_of_length`].
+    ///
+    /// ```
+    /// # fn main() -> Result<(), nodemaven::Error> {
+    /// let proxy = nodemaven::Proxy::builder()
+    ///     .login("acct")
+    ///     .password("pw")
+    ///     .param("country", "us")
+    ///     .build()?;
+    /// let workers = proxy.sessions(3)?;
+    /// assert_eq!(workers.len(), 3);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn sessions(&self, count: usize) -> Result<Vec<Proxy>> {
+        self.sessions_of_length(count, 6)
+    }
+
+    /// `count` identities with distinct session ids of `length` random bytes,
+    /// written as `2 * length` lowercase hexadecimal characters.
+    ///
+    /// Hexadecimal because a session id must not contain the gateway's
+    /// separator - a value carrying one is cut, and every id sharing a prefix
+    /// collapses onto one exit (measured 2026-08-20). UUIDs, URL-safe tokens
+    /// and base64 all carry a character that is a separator on some gateway.
+    /// From the operating system's random source through `getrandom`, not from
+    /// a clock-seeded generator: two workers started in the same millisecond
+    /// would otherwise draw the same ids and share one exit.
+    ///
+    /// The ids are distinct **within one call** and nowhere else. Two
+    /// processes rely on the size of the space, which is why the default is
+    /// 6 bytes and 2^48 ids. `count` at or above the size of the space is
+    /// refused, because drawing without repeats could never finish.
+    ///
+    /// Ported from the Python SDK's `sessions(n, length=6)` on 2026-09-29,
+    /// with its checks: the Python version once hung on `sessions(257,
+    /// length=1)` before the bound was added.
+    pub fn sessions_of_length(&self, count: usize, length: usize) -> Result<Vec<Proxy>> {
+        if count < 1 {
+            return Err(Error::Param(format!(
+                "sessions({count}) asks for no identities. Nothing would be returned \
+                 and the call is a mistake somewhere upstream."
+            )));
+        }
+        if length < 1 {
+            return Err(Error::Param(format!(
+                "length={length} would produce an empty session id."
+            )));
+        }
+        // The alphabet is the hex digits minus any single-character separator,
+        // so an id can never contain one. Until 2026-09-29 every hex digit was
+        // drawn and ids carrying the separator were skipped, which works for 12
+        // characters and not for 200: with separator "0", such an id avoids it
+        // with probability (15/16)^200, about 2.5e-6, and the draw cap refused a
+        // call that was perfectly possible. Found in review.
+        let separators = [self.provider.separator(), self.provider.pair_separator()];
+        let alphabet: Vec<u8> = b"0123456789abcdef"
+            .iter()
+            .copied()
+            .filter(|c| !separators.iter().any(|s| s.as_bytes() == [*c]))
+            .collect();
+        let chars = length.saturating_mul(2);
+
+        // The exact size of the space, grown only until it passes `count`, so
+        // no power is ever computed that could overflow. Drawing without
+        // repeating from a space no larger than `count` could never finish, so
+        // that is refused before anything is drawn.
+        let mut space: usize = 1;
+        for _ in 0..chars {
+            space = space.saturating_mul(alphabet.len());
+            if space > count {
+                break;
+            }
+        }
+        if space <= count {
+            return Err(Error::Param(format!(
+                "sessions({count}, length={length}) asks for at least the whole space: \
+                 {chars} characters from {} symbols make at most {space} distinct ids, and \
+                 drawing without repeating is what this does. Raise the length rather \
+                 than the count, and note that ids are only unique within one call - the \
+                 space has to be large enough for every process that draws from it.",
+                alphabet.len()
+            )));
+        }
+
+        // Rejection rather than trust: a collision does not fail, it hands two
+        // workers one exit and looks like a working program. A separator longer
+        // than one character cannot be kept out by the alphabet, so an id
+        // containing one is skipped, and the draws are capped for that case.
+        let long_separators: Vec<&str> =
+            separators.iter().copied().filter(|s| s.len() > 1).collect();
+        let mut seen = std::collections::BTreeSet::new();
+        let mut out = Vec::with_capacity(count);
+        let cap = count.saturating_mul(1000).saturating_add(1000);
+        let mut draws = 0usize;
+        while out.len() < count {
+            draws += 1;
+            if draws > cap {
+                return Err(Error::Param(format!(
+                    "drew {cap} session ids of {chars} characters and found only {} that \
+                     avoid the separators {separators:?}. Raise the length.",
+                    out.len()
+                )));
+            }
+            let id = draw(&alphabet, chars)?;
+            if long_separators.iter().any(|sep| id.contains(sep)) {
+                continue;
+            }
+            if seen.insert(id.clone()) {
+                out.push(self.session(&id)?);
+            }
+        }
+        Ok(out)
+    }
+
     fn rebuilt(&self, params: Vec<(String, String)>) -> Result<Proxy> {
         Ok(Proxy {
             provider: self.provider.clone(),
@@ -610,7 +726,7 @@ fn validate(provider: &Provider, params: Vec<(String, String)>) -> Result<Vec<(S
 /// of parameters produces - so this set has to be the one Python's
 /// `quote(text, safe="")` uses, byte for byte, rather than whichever set a
 /// dependency happens to default to.
-fn percent_encode(text: &str) -> String {
+pub(crate) fn percent_encode(text: &str) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {
@@ -640,4 +756,31 @@ fn from_env(env: &str, suffix: &str) -> Option<String> {
 #[allow(clippy::ptr_arg)]
 fn not_empty(value: &String) -> bool {
     !value.is_empty()
+}
+
+/// `chars` characters drawn uniformly from `alphabet`, from the operating
+/// system's random source. A byte at or above the largest multiple of the
+/// alphabet's size is redrawn, so no symbol is favoured.
+fn draw(alphabet: &[u8], chars: usize) -> Result<String> {
+    let size = alphabet.len();
+    let limit = 256 - (256 % size);
+    let mut out = String::with_capacity(chars);
+    let mut buffer = [0u8; 64];
+    while out.len() < chars {
+        getrandom::fill(&mut buffer).map_err(|error| {
+            Error::Param(format!(
+                "the operating system's random source failed ({error}), so no session \
+                 id could be drawn safely."
+            ))
+        })?;
+        for byte in buffer {
+            if out.len() == chars {
+                break;
+            }
+            if usize::from(byte) < limit {
+                out.push(alphabet[usize::from(byte) % size] as char);
+            }
+        }
+    }
+    Ok(out)
 }
