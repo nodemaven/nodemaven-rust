@@ -183,7 +183,7 @@ impl Proxy {
     pub fn connect(&self) -> Connect {
         let mut connect = Connect::new(self.server(), self.username(), self.password.clone())
             .reactions(self.provider.connect_reactions().clone());
-        if let Some(header) = self.provider.exit_ip_header() {
+        for header in self.provider.exit_ip_headers() {
             connect = connect.exit_ip_header(header);
         }
         connect

@@ -249,7 +249,7 @@ pub struct Connect {
     password: String,
     target: String,
     timeout: Duration,
-    exit_ip_header: Option<String>,
+    exit_ip_headers: Vec<String>,
     reactions: BTreeMap<String, String>,
 }
 
@@ -265,7 +265,7 @@ impl fmt::Debug for Connect {
             .field("password", &REDACTED)
             .field("target", &self.target)
             .field("timeout", &self.timeout)
-            .field("exit_ip_header", &self.exit_ip_header)
+            .field("exit_ip_headers", &self.exit_ip_headers)
             .field("reactions", &self.reactions.len())
             .finish()
     }
@@ -288,7 +288,7 @@ impl Connect {
             password: password.into(),
             target: DEFAULT_TARGET.to_string(),
             timeout: DEFAULT_TIMEOUT,
-            exit_ip_header: None,
+            exit_ip_headers: Vec::new(),
             reactions: BTreeMap::new(),
         }
     }
@@ -313,12 +313,14 @@ impl Connect {
         self
     }
 
-    /// Which response header carries the exit address on this gateway.
+    /// A response header that may carry the exit address on this gateway. Call
+    /// it once per name; they are tried in the order given and the first one
+    /// present wins.
     ///
     /// Per-gateway dialect, so it comes from the provider definition rather than
-    /// being guessed here. Unset means [`Check::exit_ip`] is always `None`.
+    /// being guessed here. None set means [`Check::exit_ip`] is always `None`.
     pub fn exit_ip_header(mut self, header: impl Into<String>) -> Self {
-        self.exit_ip_header = Some(header.into());
+        self.exit_ip_headers.push(header.into());
         self
     }
 
@@ -405,7 +407,9 @@ impl Connect {
         drop(stream);
 
         let (status, reason, headers) = parse_head(&head, &self.server)?;
-        let exit_ip = self.exit_ip_header.as_deref().and_then(|name| {
+        // First name present wins; within one name the last occurrence does, as
+        // Python's dict of headers has it.
+        let exit_ip = self.exit_ip_headers.iter().find_map(|name| {
             let wanted = name.to_ascii_lowercase();
             headers
                 .iter()

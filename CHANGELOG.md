@@ -8,6 +8,36 @@ is built on: a claim about what the gateway accepts carries the probe that
 established it and the date it was run. "The vendor's own documentation says so"
 is not one of those, and an entry resting on it says so outright.
 
+## Unreleased
+
+### `check()` reads the exit address under both of the gateway's spellings
+
+`exit_ip_header` in a provider definition takes a list of header names as well
+as one name, tried in order, and the shipped definition lists
+`["X-Proxy-Exit-IP", "X-Exit-IP"]`. It named `X-Proxy-Exit-IP` alone, and the
+gateway's `OK` back end sends the address as `X-Exit-IP`, so `exit_ip()` came
+back `None` on replies that carried one - two of the three `None`s in the
+2026-09-08 sample of eight `200` replies. The pairing of `X-Exit-IP` with the
+`OK` reason phrase is from two rounds on 2026-09-10.
+
+- `Provider::exit_ip_headers()` returns every name; `exit_ip_header()` is still
+  there and returns the first.
+- `ProviderBuilder::exit_ip_header` and `Connect::exit_ip_header` now **add** a
+  name rather than replace the one before it, so calling either twice gives two
+  names tried in order. Code that called them once behaves as before.
+- An empty name or an empty list in a definition is refused at load. An empty
+  string used to load as "no header"; the Python SDK took it as a name, and both
+  now refuse it.
+
+### The provider definition is the Python SDK's again
+
+The two copies had drifted for the fourth time: the Python one carried a
+rewritten explanation of the `500` reaction - one measured cause, and a warning
+that a `500` can have others - which reached PyPI in 0.1.4 while crates.io 0.1.1
+kept the older sentence. The definition is now copied from a shared
+specification kept beside both SDKs, with the Python copy as the canonical one,
+decided 2026-09-29.
+
 ## 0.1.1 - 2026-09-11
 
 **This section said "Documentation only" until 2026-09-11 and it is not any

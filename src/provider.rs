@@ -64,7 +64,7 @@ pub struct Provider {
     values: BTreeMap<String, Vec<String>>,
     normalize: BTreeSet<String>,
     connect_reactions: BTreeMap<String, String>,
-    exit_ip_header: Option<String>,
+    exit_ip_headers: Vec<String>,
     source: String,
     source_read: String,
     notes: String,
@@ -92,7 +92,7 @@ impl Provider {
             values: BTreeMap::new(),
             normalize: BTreeSet::new(),
             connect_reactions: BTreeMap::new(),
-            exit_ip_header: None,
+            exit_ip_headers: Vec::new(),
             source: String::new(),
             source_read: String::new(),
             notes: String::new(),
@@ -149,9 +149,21 @@ impl Provider {
         self.port
     }
 
-    /// The header the exit address arrives on, when the gateway sends one.
+    /// The first header the exit address may arrive on, when the gateway sends
+    /// one. See [`Provider::exit_ip_headers`] for all of them.
     pub fn exit_ip_header(&self) -> Option<&str> {
-        self.exit_ip_header.as_deref()
+        self.exit_ip_headers.first().map(String::as_str)
+    }
+
+    /// Every header the exit address may arrive on, in the order they are
+    /// tried.
+    ///
+    /// More than one because the shipped gateway's back ends spell it two ways -
+    /// `X-Proxy-Exit-IP`, and `X-Exit-IP` on the one that answers `OK`. With one
+    /// name, [`crate::Check::exit_ip`] came back `None` on replies that carried
+    /// an address.
+    pub fn exit_ip_headers(&self) -> &[String] {
+        &self.exit_ip_headers
     }
 
     /// Where the dialect was read from.
@@ -373,9 +385,10 @@ impl ProviderBuilder {
         self
     }
 
-    /// The header the exit address arrives on.
+    /// A header the exit address may arrive on. Call it once per name; they
+    /// are tried in the order given.
     pub fn exit_ip_header(mut self, header: impl Into<String>) -> Self {
-        self.0.exit_ip_header = Some(header.into());
+        self.0.exit_ip_headers.push(header.into());
         self
     }
 
@@ -506,12 +519,36 @@ fn parse(text: &str, provider_id: &str, origin: &str) -> Result<Provider> {
     for (key, field) in [
         ("session_param", &mut provider.session_param),
         ("host", &mut provider.host),
-        ("exit_ip_header", &mut provider.exit_ip_header),
     ] {
         if raw.contains_key(key) {
             let value = string(&raw, key, origin)?;
             *field = (!value.is_empty()).then_some(value);
         }
+    }
+
+    // One name or a list of them, tried in order. An empty name or an empty
+    // list is refused rather than read as "no header": present-but-empty reads
+    // as "this gateway reports its exit address" and can never find it. Until
+    // 2026-09-29 this was one string and an empty one was silently `None`.
+    if let Some(value) = raw.get("exit_ip_header") {
+        let refuse = || {
+            Error::Provider(format!(
+                "{origin} gives exit_ip_header as {value:?}. It has to be a header \
+                 name or a non-empty list of header names."
+            ))
+        };
+        let names: Vec<String> = match value {
+            toml::Value::String(name) => vec![name.clone()],
+            toml::Value::Array(items) => items
+                .iter()
+                .map(|item| item.as_str().map(str::to_string).ok_or_else(refuse))
+                .collect::<Result<_>>()?,
+            _ => return Err(refuse()),
+        };
+        if names.is_empty() || names.iter().any(String::is_empty) {
+            return Err(refuse());
+        }
+        provider.exit_ip_headers = names;
     }
 
     // Through `crate::check::port_number`, the same rule `ProxyBuilder::build`

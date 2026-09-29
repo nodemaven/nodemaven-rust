@@ -774,6 +774,54 @@ mod what_a_status_means_on_this_gateway {
     }
 }
 
+mod the_exit_address_header {
+    use super::*;
+
+    #[test]
+    fn one_name_still_loads() {
+        let provider = load_str(
+            "label = \"P\"\nknown_params = [\"country\"]\nexit_ip_header = \"X-Proxy-Exit-IP\"\n",
+            "p",
+        )
+        .unwrap();
+        assert_eq!(provider.exit_ip_headers(), ["X-Proxy-Exit-IP"]);
+        assert_eq!(provider.exit_ip_header(), Some("X-Proxy-Exit-IP"));
+    }
+
+    #[test]
+    fn several_names_load_in_order() {
+        let provider = load_str(
+            "label = \"P\"\nknown_params = [\"country\"]\n\
+             exit_ip_header = [\"X-Proxy-Exit-IP\", \"X-Exit-IP\"]\n",
+            "p",
+        )
+        .unwrap();
+        assert_eq!(provider.exit_ip_headers(), ["X-Proxy-Exit-IP", "X-Exit-IP"]);
+        assert_eq!(provider.exit_ip_header(), Some("X-Proxy-Exit-IP"));
+    }
+
+    #[test]
+    fn a_header_that_can_never_match_is_refused_at_load() {
+        // Until 2026-09-29 an empty string loaded here as "no header" while
+        // Python took it as a name. Both refuse it now.
+        for value in ["[]", "\"\"", "[\"X-Exit-IP\", \"\"]", "[1]", "7"] {
+            let message = provider_error(load_str(
+                &format!("label = \"P\"\nknown_params = [\"country\"]\nexit_ip_header = {value}\n"),
+                "p",
+            ));
+            assert!(message.contains("exit_ip_header"), "{value}: {message}");
+        }
+    }
+
+    #[test]
+    fn the_shipped_definition_reads_both_spellings() {
+        assert_eq!(
+            load("nodemaven").unwrap().exit_ip_headers(),
+            ["X-Proxy-Exit-IP", "X-Exit-IP"]
+        );
+    }
+}
+
 mod the_shipped_definition {
     use super::*;
 
