@@ -1193,3 +1193,95 @@ mod a_definition_cannot_declare_an_impossible_fold {
         assert!(message.contains("Pick one"), "{message}");
     }
 }
+
+mod sessions {
+    //! Ported from the Python SDK's `TestSessions` on 2026-09-29, when
+    //! `sessions()` arrived here. Same cases, same bounds.
+    use super::*;
+
+    fn sessions_error(result: Result<Vec<Proxy>>) -> String {
+        match result {
+            Err(Error::Param(message)) => message,
+            other => panic!("expected a Param error, got {other:?}"),
+        }
+    }
+
+    fn sid(proxy: &Proxy) -> String {
+        proxy
+            .params()
+            .iter()
+            .find(|(name, _)| name == "sid")
+            .map(|(_, value)| value.clone())
+            .expect("a sid")
+    }
+
+    #[test]
+    fn every_identity_is_distinct() {
+        let proxy = creds().param("country", "us").build().unwrap();
+        let batch = proxy.sessions(25).unwrap();
+        let names: std::collections::BTreeSet<String> = batch.iter().map(Proxy::username).collect();
+        assert_eq!(names.len(), 25);
+    }
+
+    #[test]
+    fn the_ids_are_lowercase_hex_and_that_is_load_bearing() {
+        // Hex because a separator inside a session id is cut by the gateway,
+        // and every id sharing the prefix lands on one exit (2026-08-20).
+        let proxy = creds().build().unwrap();
+        for identity in proxy.sessions_of_length(10, 8).unwrap() {
+            let id = sid(&identity);
+            assert_eq!(id.len(), 16);
+            assert!(id.bytes().all(|b| b"0123456789abcdef".contains(&b)), "{id}");
+        }
+    }
+
+    #[test]
+    fn the_default_is_twelve_characters() {
+        let proxy = creds().build().unwrap();
+        assert_eq!(sid(&proxy.sessions(1).unwrap()[0]).len(), 12);
+    }
+
+    #[test]
+    fn the_parent_is_untouched_and_the_parameters_are_kept() {
+        let proxy = creds()
+            .param("country", "us")
+            .param("sid", "seed")
+            .build()
+            .unwrap();
+        let batch = proxy.sessions(3).unwrap();
+        assert_eq!(sid(&proxy), "seed");
+        for identity in batch {
+            assert!(identity.username().starts_with("acct-country-us-sid-"));
+        }
+    }
+
+    #[test]
+    fn a_nonsense_count_or_length_is_refused() {
+        let proxy = creds().build().unwrap();
+        assert!(sessions_error(proxy.sessions(0)).contains("no identities"));
+        assert!(sessions_error(proxy.sessions_of_length(1, 0)).contains("length"));
+    }
+
+    #[test]
+    fn the_whole_space_is_refused_and_one_less_is_not() {
+        // The Python version hung on `sessions(257, length=1)` before this
+        // bound existed: rejection sampling cannot draw more distinct values
+        // than there are.
+        let proxy = creds().build().unwrap();
+        assert!(
+            sessions_error(proxy.sessions_of_length(256, 1)).contains("at least the whole space")
+        );
+        assert!(
+            sessions_error(proxy.sessions_of_length(257, 1)).contains("at least the whole space")
+        );
+        let batch = proxy.sessions_of_length(255, 1).unwrap();
+        let ids: std::collections::BTreeSet<String> = batch.iter().map(sid).collect();
+        assert_eq!(ids.len(), 255);
+    }
+
+    #[test]
+    fn a_long_length_does_not_overflow_the_bound() {
+        let proxy = creds().build().unwrap();
+        assert_eq!(proxy.sessions_of_length(2, 64).unwrap().len(), 2);
+    }
+}

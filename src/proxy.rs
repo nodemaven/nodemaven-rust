@@ -232,6 +232,91 @@ impl Proxy {
         self.with_param(name, session_id)
     }
 
+    /// `count` identities with these parameters and distinct session ids, each
+    /// id 12 hexadecimal characters. See [`Proxy::sessions_of_length`].
+    ///
+    /// ```
+    /// # fn main() -> Result<(), nodemaven::Error> {
+    /// let proxy = nodemaven::Proxy::builder()
+    ///     .login("acct")
+    ///     .password("pw")
+    ///     .param("country", "us")
+    ///     .build()?;
+    /// let workers = proxy.sessions(3)?;
+    /// assert_eq!(workers.len(), 3);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn sessions(&self, count: usize) -> Result<Vec<Proxy>> {
+        self.sessions_of_length(count, 6)
+    }
+
+    /// `count` identities with distinct session ids of `length` random bytes,
+    /// written as `2 * length` lowercase hexadecimal characters.
+    ///
+    /// Hexadecimal because a session id must not contain the gateway's
+    /// separator - a value carrying one is cut, and every id sharing a prefix
+    /// collapses onto one exit (measured 2026-08-20). UUIDs, URL-safe tokens
+    /// and base64 all carry a character that is a separator on some gateway.
+    /// From the operating system's random source through `getrandom`, not from
+    /// a clock-seeded generator: two workers started in the same millisecond
+    /// would otherwise draw the same ids and share one exit.
+    ///
+    /// The ids are distinct **within one call** and nowhere else. Two
+    /// processes rely on the size of the space, which is why the default is
+    /// 6 bytes and 2^48 ids. `count` at or above the size of the space is
+    /// refused, because drawing without repeats could never finish.
+    ///
+    /// Ported from the Python SDK's `sessions(n, length=6)` on 2026-09-29,
+    /// with its checks: the Python version once hung on `sessions(257,
+    /// length=1)` before the bound was added.
+    pub fn sessions_of_length(&self, count: usize, length: usize) -> Result<Vec<Proxy>> {
+        if count < 1 {
+            return Err(Error::Param(format!(
+                "sessions({count}) asks for no identities. Nothing would be returned \
+                 and the call is a mistake somewhere upstream."
+            )));
+        }
+        if length < 1 {
+            return Err(Error::Param(format!(
+                "length={length} would produce an empty session id."
+            )));
+        }
+        // Compared in bits, as Python does, so that no power of 16 is ever
+        // computed: `count >= 2^bits` exactly when `count`'s bit length exceeds
+        // `bits`. A space of 64 bits or more holds any `usize`.
+        let bits = length.saturating_mul(8);
+        let count_bits = (usize::BITS - count.leading_zeros()) as usize;
+        if count_bits > bits {
+            return Err(Error::Param(format!(
+                "sessions({count}, length={length}) asks for at least the whole space: \
+                 {} hex characters make 2^{bits} distinct ids, and drawing without \
+                 repeating is what this does. Raise the length rather than the count, \
+                 and note that ids are only unique within one call - the space has to \
+                 be large enough for every process that draws from it.",
+                2 * length
+            )));
+        }
+        // Rejection rather than trust: a collision does not fail, it hands two
+        // workers one exit and looks like a working program.
+        let mut seen = std::collections::BTreeSet::new();
+        let mut out = Vec::with_capacity(count);
+        let mut bytes = vec![0u8; length];
+        while out.len() < count {
+            getrandom::fill(&mut bytes).map_err(|error| {
+                Error::Param(format!(
+                    "the operating system's random source failed ({error}), so no \
+                     session id could be drawn safely."
+                ))
+            })?;
+            let id = hex(&bytes);
+            if seen.insert(id.clone()) {
+                out.push(self.session(&id)?);
+            }
+        }
+        Ok(out)
+    }
+
     fn rebuilt(&self, params: Vec<(String, String)>) -> Result<Proxy> {
         Ok(Proxy {
             provider: self.provider.clone(),
@@ -610,7 +695,7 @@ fn validate(provider: &Provider, params: Vec<(String, String)>) -> Result<Vec<(S
 /// of parameters produces - so this set has to be the one Python's
 /// `quote(text, safe="")` uses, byte for byte, rather than whichever set a
 /// dependency happens to default to.
-fn percent_encode(text: &str) -> String {
+pub(crate) fn percent_encode(text: &str) -> String {
     const HEX: &[u8; 16] = b"0123456789ABCDEF";
     let mut out = String::with_capacity(text.len());
     for byte in text.bytes() {
@@ -640,4 +725,15 @@ fn from_env(env: &str, suffix: &str) -> Option<String> {
 #[allow(clippy::ptr_arg)]
 fn not_empty(value: &String) -> bool {
     !value.is_empty()
+}
+
+/// Lowercase hexadecimal, as Python's `secrets.token_hex` writes it.
+fn hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        out.push(DIGITS[usize::from(byte >> 4)] as char);
+        out.push(DIGITS[usize::from(byte & 0x0f)] as char);
+    }
+    out
 }
