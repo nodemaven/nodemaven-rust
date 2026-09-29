@@ -1342,6 +1342,16 @@ pair_separator = \"0\"
     }
 
     #[test]
+    fn the_messages_read_as_sentences() {
+        // Found in review 2026-09-29: three of these strings had lost their `\`
+        // line continuations and carried 18 spaces of source indentation into
+        // the message a caller reads.
+        let proxy = creds().build().unwrap();
+        let message = sessions_error(proxy.sessions_of_length(256, 1));
+        assert!(!message.contains("  "), "{message:?}");
+    }
+
+    #[test]
     fn a_long_length_does_not_overflow_the_bound() {
         let proxy = creds().build().unwrap();
         assert_eq!(proxy.sessions_of_length(2, 64).unwrap().len(), 2);

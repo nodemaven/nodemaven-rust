@@ -309,7 +309,11 @@ impl Proxy {
         }
         if space <= count {
             return Err(Error::Param(format!(
-                "sessions({count}, length={length}) asks for at least the whole space:                  {chars} characters from {} symbols make at most {space} distinct ids, and                  drawing without repeating is what this does. Raise the length rather                  than the count, and note that ids are only unique within one call - the                  space has to be large enough for every process that draws from it.",
+                "sessions({count}, length={length}) asks for at least the whole space: \
+                 {chars} characters from {} symbols make at most {space} distinct ids, and \
+                 drawing without repeating is what this does. Raise the length rather \
+                 than the count, and note that ids are only unique within one call - the \
+                 space has to be large enough for every process that draws from it.",
                 alphabet.len()
             )));
         }
@@ -328,7 +332,8 @@ impl Proxy {
             draws += 1;
             if draws > cap {
                 return Err(Error::Param(format!(
-                    "drew {cap} session ids of {chars} characters and found only {} that                      avoid the separators {separators:?}. Raise the length.",
+                    "drew {cap} session ids of {chars} characters and found only {} that \
+                     avoid the separators {separators:?}. Raise the length.",
                     out.len()
                 )));
             }
@@ -764,7 +769,8 @@ fn draw(alphabet: &[u8], chars: usize) -> Result<String> {
     while out.len() < chars {
         getrandom::fill(&mut buffer).map_err(|error| {
             Error::Param(format!(
-                "the operating system's random source failed ({error}), so no session                  id could be drawn safely."
+                "the operating system's random source failed ({error}), so no session \
+                 id could be drawn safely."
             ))
         })?;
         for byte in buffer {
