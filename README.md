@@ -172,6 +172,19 @@ let plain   = proxy.without_param("filter")?;       // also a new identity
 
 The order the parameters are written in does not change which exit you get.
 
+For a pool of workers, draw the ids rather than inventing them:
+
+```rust
+for identity in proxy.sessions(50)? {
+    queue.push(identity);                           // each one a different exit
+}
+```
+
+`sessions(n)` draws hexadecimal ids from the operating system's random source,
+12 characters by default, so none can contain a separator. They are distinct
+**within one call**; separate processes rely on the size of the id space.
+`sessions_of_length(n, bytes)` sets the length.
+
 ## Validation
 
 A proxy gateway is bad at telling you that you got the username wrong. A value it
@@ -268,6 +281,82 @@ The timeout defaults to 15 seconds rather than something brisk, because one of
 this gateway's measured reactions is no reply for about 20 seconds. A 5-second
 timeout would report that as a network problem.
 
+## Account API
+
+Quota, usage, sub-users, whitelisted addresses and the location catalogue.
+Separately credentialled: the API key and the proxy password are different
+secrets from different places.
+
+```rust,no_run
+use nodemaven::Client;
+
+let client = Client::builder().build()?;            // NODEMAVEN_APIKEY from the environment
+let me = client.me()?;
+println!("{}", me["data"]);                         // traffic left, in bytes
+# Ok::<(), nodemaven::Error>(())
+```
+
+Responses are the server's own JSON, as `serde_json::Value`, unrenamed and
+unmodelled: `data` is the traffic left, and `is_traffic_frozen` is a **string**.
+**`me()` returns your proxy password in clear text, and so do `sub_users()`,
+`create_sub_user()` and `reset_sub_user_usage()`.** Do not print or log them
+whole.
+
+```rust,ignore
+client.countries(&[])?;                                   // one page of the catalogue
+client.regions(&[("country__code", "us")])?;              // Django's lookup, the server's spelling
+client.cities(&[("country__code", "us"), ("region__code", "dc")])?;
+client.isps(&[("country__code", "us")])?;
+client.zip_codes(&[("country__code", "us")])?;
+client.isp_regions(&[("country__code", "us")])?;
+client.isp_cities(&[("country__code", "us")])?;           // pages of 100: this one is slow
+client.zip_code_regions(&[("country__code", "us")])?;
+client.zip_code_cities(&[("country__code", "us")])?;
+
+// Per proxy username. Dates are dd-mm-yyyy; ISO is answered 400, and no
+// window at all is answered 500.
+client.statistics_data("acct-1", &[("start", "01-09-2026"), ("end", "07-09-2026")])?;
+client.statistics_requests("acct-1", &[("period", "today")])?;
+client.domain_statistics("acct-1", &[("period", "hours24")])?;
+
+client.sub_users(&[])?;
+client.create_sub_user("worker-1", "a-password", &[("traffic_limit", 1024.into())])?;
+client.update_sub_user(id, &[("traffic_limit", 2048.into())])?;
+client.delete_sub_user(id)?;
+client.reset_sub_user_usage(&[id.into()])?;
+
+client.whitelist_ips(&[])?;
+client.whitelist_ip(ip_id)?;
+client.upsert_whitelist_ip("203.0.113.7", 10, &[("name", "the office".into())])?;
+client.delete_whitelist_ip(ip_id)?;
+```
+
+A list endpoint returns a `Page` - **one page, not the collection**. The server
+caps a page at 1000 rows, and a page that stops there looks exactly like a
+finished one. `iterate()` walks the rest:
+
+```rust,ignore
+let first = client.cities(&[("country__code", "us")])?;
+let every_city = client.iterate(first).collect::<Result<Vec<_>, _>>()?;
+```
+
+The gateway answers a country it does not have with `407`, which reads as a
+credentials problem. The catalogue knows better:
+
+```rust,ignore
+for problem in client.validate(&proxy)? {
+    eprintln!("{problem}");
+}
+```
+
+A `2xx` whose body is not JSON is an error: the API host answers a path it does
+not serve with `200` and its web page. The built-in transport follows no
+redirect, because the key travels in a header, and reads no proxy from the
+environment. To use your own HTTP client, pass any function of
+`(method, url, headers, body) -> io::Result<(status, body)>` to
+`Client::builder().transport(...)`, and build without the default `http`
+feature if you want no TLS stack compiled in.
+
 ## What this crate does not do
 
 **It does not retry.** Retry policy belongs to the caller, and ours measured
@@ -277,9 +366,10 @@ two in a healthy one. The harness behind that number is open source at
 [nodemaven/proxy-benchmark](https://github.com/nodemaven/proxy-benchmark), so it
 can be re-run rather than believed.
 
-It also does not own an HTTP client, a connection pool or a browser, and it
-brings no async runtime with it. Those are yours, and they are better than
-anything a vendor SDK would bundle.
+It also does not own the HTTP client your proxy traffic goes through, a
+connection pool or a browser, and it brings no async runtime with it. Those are
+yours. The one HTTP client inside is the account API's transport, and it can be
+replaced or compiled out.
 
 ## Other gateways
 
@@ -323,10 +413,14 @@ bind it to** - use `load_file_as` to state it outright.
 
 ## Requirements
 
-Rust 1.85 or newer, which is the MSRV `toml` declares - nothing in this crate
-needs it. One dependency, `toml`, with default features off: the writer half is
-dead weight here because nothing in this crate emits TOML. No unsafe code
-(`#![forbid(unsafe_code)]`), no build script, no async runtime.
+Rust 1.85 or newer, which is the MSRV `toml` and `ureq` declare - nothing in this
+crate's own code needs it. Dependencies: `toml` (reader only), `getrandom` for
+session ids, `serde_json` for the account API's responses, and - behind the
+default `http` feature - `ureq` with `rustls` as the API's transport. That last
+one compiles `ring`; turn the feature off (`default-features = false`) if you
+only build usernames, or bring your own transport. No unsafe code
+(`#![forbid(unsafe_code)]`) in this crate, no build script of its own, no async
+runtime.
 
 ## License
 
