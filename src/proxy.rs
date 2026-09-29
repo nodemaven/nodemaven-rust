@@ -282,57 +282,58 @@ impl Proxy {
                 "length={length} would produce an empty session id."
             )));
         }
-        // Compared in bits, as Python does, so that no power of 16 is ever
-        // computed: `count >= 2^bits` exactly when `count`'s bit length exceeds
-        // `bits`. A space of 64 bits or more holds any `usize`.
-        let bits = length.saturating_mul(8);
-        let count_bits = (usize::BITS - count.leading_zeros()) as usize;
-        if count_bits > bits {
+        // The alphabet is the hex digits minus any single-character separator,
+        // so an id can never contain one. Until 2026-09-29 every hex digit was
+        // drawn and ids carrying the separator were skipped, which works for 12
+        // characters and not for 200: with separator "0", such an id avoids it
+        // with probability (15/16)^200, about 2.5e-6, and the draw cap refused a
+        // call that was perfectly possible. Found in review.
+        let separators = [self.provider.separator(), self.provider.pair_separator()];
+        let alphabet: Vec<u8> = b"0123456789abcdef"
+            .iter()
+            .copied()
+            .filter(|c| !separators.iter().any(|s| s.as_bytes() == [*c]))
+            .collect();
+        let chars = length.saturating_mul(2);
+
+        // The exact size of the space, grown only until it passes `count`, so
+        // no power is ever computed that could overflow. Drawing without
+        // repeating from a space no larger than `count` could never finish, so
+        // that is refused before anything is drawn.
+        let mut space: usize = 1;
+        for _ in 0..chars {
+            space = space.saturating_mul(alphabet.len());
+            if space > count {
+                break;
+            }
+        }
+        if space <= count {
             return Err(Error::Param(format!(
-                "sessions({count}, length={length}) asks for at least the whole space: \
-                 {} hex characters make 2^{bits} distinct ids, and drawing without \
-                 repeating is what this does. Raise the length rather than the count, \
-                 and note that ids are only unique within one call - the space has to \
-                 be large enough for every process that draws from it.",
-                2 * length
+                "sessions({count}, length={length}) asks for at least the whole space:                  {chars} characters from {} symbols make at most {space} distinct ids, and                  drawing without repeating is what this does. Raise the length rather                  than the count, and note that ids are only unique within one call - the                  space has to be large enough for every process that draws from it.",
+                alphabet.len()
             )));
         }
+
         // Rejection rather than trust: a collision does not fail, it hands two
-        // workers one exit and looks like a working program.
-        //
-        // A definition may separate on a hexadecimal character, and an id
-        // carrying it would be refused by `session()` - so such draws are
-        // skipped, found in review 2026-09-29. Skipping shrinks the space below
-        // what the bound above assumed, so the draws are capped too: without a
-        // cap, `sessions_of_length(255, 1)` on a gateway separating on `0` would
-        // loop forever over the 225 ids it can still produce.
-        let separators = [self.provider.separator(), self.provider.pair_separator()];
+        // workers one exit and looks like a working program. A separator longer
+        // than one character cannot be kept out by the alphabet, so an id
+        // containing one is skipped, and the draws are capped for that case.
+        let long_separators: Vec<&str> =
+            separators.iter().copied().filter(|s| s.len() > 1).collect();
         let mut seen = std::collections::BTreeSet::new();
         let mut out = Vec::with_capacity(count);
-        let mut bytes = vec![0u8; length];
         let cap = count.saturating_mul(1000).saturating_add(1000);
         let mut draws = 0usize;
         while out.len() < count {
             draws += 1;
             if draws > cap {
                 return Err(Error::Param(format!(
-                    "drew {cap} session ids of {} hex characters and found only {} that \
-                     avoid the separators {separators:?}. Raise the length.",
-                    2 * length,
+                    "drew {cap} session ids of {chars} characters and found only {} that                      avoid the separators {separators:?}. Raise the length.",
                     out.len()
                 )));
             }
-            getrandom::fill(&mut bytes).map_err(|error| {
-                Error::Param(format!(
-                    "the operating system's random source failed ({error}), so no \
-                     session id could be drawn safely."
-                ))
-            })?;
-            let id = hex(&bytes);
-            if separators
-                .iter()
-                .any(|sep| !sep.is_empty() && id.contains(sep))
-            {
+            let id = draw(&alphabet, chars)?;
+            if long_separators.iter().any(|sep| id.contains(sep)) {
                 continue;
             }
             if seen.insert(id.clone()) {
@@ -752,13 +753,28 @@ fn not_empty(value: &String) -> bool {
     !value.is_empty()
 }
 
-/// Lowercase hexadecimal, as Python's `secrets.token_hex` writes it.
-fn hex(bytes: &[u8]) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        out.push(DIGITS[usize::from(byte >> 4)] as char);
-        out.push(DIGITS[usize::from(byte & 0x0f)] as char);
+/// `chars` characters drawn uniformly from `alphabet`, from the operating
+/// system's random source. A byte at or above the largest multiple of the
+/// alphabet's size is redrawn, so no symbol is favoured.
+fn draw(alphabet: &[u8], chars: usize) -> Result<String> {
+    let size = alphabet.len();
+    let limit = 256 - (256 % size);
+    let mut out = String::with_capacity(chars);
+    let mut buffer = [0u8; 64];
+    while out.len() < chars {
+        getrandom::fill(&mut buffer).map_err(|error| {
+            Error::Param(format!(
+                "the operating system's random source failed ({error}), so no session                  id could be drawn safely."
+            ))
+        })?;
+        for byte in buffer {
+            if out.len() == chars {
+                break;
+            }
+            if usize::from(byte) < limit {
+                out.push(alphabet[usize::from(byte) % size] as char);
+            }
+        }
     }
-    out
+    Ok(out)
 }

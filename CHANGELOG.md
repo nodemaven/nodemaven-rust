@@ -64,9 +64,10 @@ the same day.
 hexadecimal characters from the operating system's random source -
 and `sessions_of_length(n, bytes)` sets the length. Distinct within one call;
 a count at or above the size of the id space is refused rather than looped on.
-An id containing the provider's separator is skipped rather than refused, so a
-definition that separates on a hexadecimal digit still works, and the draws are
-capped so a space the separator shrinks below the count ends in an error. The
+Ids are drawn from the hex digits minus any one-character separator of the
+provider, so a definition that separates on a hexadecimal digit still works at
+any length, and a request larger than that smaller id space is refused before
+anything is drawn. The
 same checks as the Python SDK's `sessions(n, length=6)`.
 
 ### Dependencies

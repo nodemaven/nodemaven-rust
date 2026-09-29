@@ -1277,6 +1277,29 @@ pair_separator = \"a\"
     }
 
     #[test]
+    fn a_long_id_with_a_hex_digit_separator_is_still_drawn() {
+        // Found in review: skipping whole ids that carried the separator made
+        // long ids all but impossible - (15/16)^200 for 100 bytes - and the
+        // draw cap refused a valid call. The alphabet now excludes it.
+        let provider = load_str(
+            "label = \"P\"
+known_params = [\"sid\"]
+session_param = \"sid\"
+             separator = \"0\"
+pair_separator = \"0\"
+",
+            "p",
+        )
+        .unwrap();
+        let proxy = creds().provider(provider).build().unwrap();
+        for identity in proxy.sessions_of_length(3, 100).unwrap() {
+            let id = sid(&identity);
+            assert_eq!(id.len(), 200);
+            assert!(!id.contains('0'));
+        }
+    }
+
+    #[test]
     fn a_space_the_separator_shrinks_below_the_count_is_refused_not_looped() {
         // Length 1 with separator "0" leaves 225 usable ids of 256, so 255
         // passes the size bound and could never finish without the draw cap.
