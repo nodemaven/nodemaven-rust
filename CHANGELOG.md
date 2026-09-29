@@ -35,8 +35,10 @@ What a caller should know, all measured on the Python side:
   collection. `isp_cities()` pages at 100, because 1000 rows take about 56
   seconds.
 - An empty `2xx` is an answer only to a `DELETE`; on any other call it is
-  `Error::Api`. A `2xx` carrying `success: false` is an error whether or not it
-  has a `payload`.
+  `Error::Api`. In the sub-user write calls - create, update, delete, usage
+  reset - which unwrap the `{success, payload}` envelope, a `2xx` carrying
+  `success: false` is an error whether or not it has a `payload`. Other calls
+  do not read the flag.
 - Statistics dates are `dd-mm-yyyy`.
 
 Four error variants arrive with it - `Api`, `Auth`, `NotFound`, `RateLimit` -
