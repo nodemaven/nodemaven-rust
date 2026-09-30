@@ -20,9 +20,11 @@ every project on `nodemaven = "0.1"` would take this release on its next
 feature that compiles `ring`, which needs a C compiler that a builder-only
 project never needed. That is a build that can stop working without anyone
 having asked for anything, so the upgrade is made opt-in. Code that built
-against 0.1.1 builds against 0.2.0 unchanged, with one behavioural difference
-listed below: `exit_ip_header()` on the two builders adds a name rather than
-replacing the previous one.
+against 0.1.1 builds against 0.2.0 unchanged. The behavioural differences are
+confined to `exit_ip_header`, both listed below: on the two builders it adds a
+name rather than replacing the previous one, and an empty header name - or an
+empty list - is refused, where a definition carrying `exit_ip_header = ""` used
+to load as "no header".
 
 ### The account API client
 
