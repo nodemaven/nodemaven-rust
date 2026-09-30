@@ -1,6 +1,6 @@
 [package]
 name = "nodemaven"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Build and validate NodeMaven proxy connection strings, and call its account API. No retries."
