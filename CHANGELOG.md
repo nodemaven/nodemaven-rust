@@ -8,7 +8,23 @@ is built on: a claim about what the gateway accepts carries the probe that
 established it and the date it was run. "The vendor's own documentation says so"
 is not one of those, and an entry resting on it says so outright.
 
-## Unreleased
+## 0.2.0 - 2026-09-30
+
+The account API client and `Proxy::sessions`, which close the gap to the Python
+SDK recorded in the shared specification's coverage table: the 49 cases of that
+specification pass against both SDKs.
+
+**Why 0.2.0 and not 0.1.2.** Cargo treats 0.1.2 as compatible with 0.1.1, so
+every project on `nodemaven = "0.1"` would take this release on its next
+`cargo update` - and with it three new dependencies and a default `http`
+feature that compiles `ring`, which needs a C compiler that a builder-only
+project never needed. That is a build that can stop working without anyone
+having asked for anything, so the upgrade is made opt-in. Code that built
+against 0.1.1 builds against 0.2.0 unchanged. The behavioural differences are
+confined to `exit_ip_header`, both listed below: on the two builders it adds a
+name rather than replacing the previous one, and an empty header name - or an
+empty list - is refused, where a definition carrying `exit_ip_header = ""` used
+to load as "no header".
 
 ### The account API client
 
