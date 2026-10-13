@@ -53,8 +53,9 @@ What a caller should know, all measured on the Python side:
   about several of its own fields.
 - `me()`, `sub_users()`, `create_sub_user()` and `reset_sub_user_usage()` return
   live proxy passwords.
-- A `2xx` whose body is not JSON is `Error::Api`: the API host answers a path it
-  does not serve with `200` and its web page.
+- A `2xx` whose body is not JSON is `Error::Api`: the API host redirects a path
+  it does not serve to a not-found page, which a transport that follows
+  redirects receives with `200`.
 - A page is capped at 1000 rows; `iterate()` walks the rest, stops on an empty
   page, advances by the rows returned, and refuses a server that ignores the
   cursor. It stops with an error after 100 pages rather than returning a
