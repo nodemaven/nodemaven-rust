@@ -8,7 +8,7 @@ is built on: a claim about what the gateway accepts carries the probe that
 established it and the date it was run. "The vendor's own documentation says so"
 is not one of those, and an entry resting on it says so outright.
 
-## Unreleased
+## 0.2.1 - 2026-10-13
 
 - **A rejected API key now reads as the server's own sentence.** The host
   answers a missing or rejected key with
