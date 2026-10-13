@@ -8,6 +8,17 @@ is built on: a claim about what the gateway accepts carries the probe that
 established it and the date it was run. "The vendor's own documentation says so"
 is not one of those, and an entry resting on it says so outright.
 
+## 0.2.1 - 2026-10-13
+
+- **A rejected API key now reads as the server's own sentence.** The host
+  answers a missing or rejected key with
+  `{"error": {"code", "message", "retryable"}}`; `Error::Auth` used to show that
+  object flattened into one line, and now shows the message and the code.
+- **Corrected wording about unregistered paths.** The host redirects a path it
+  does not serve (`302`) to `/not-found`; a client that follows redirects
+  receives that page with `200`. The docs said the host answered `200` itself.
+  Behaviour is unchanged.
+
 ## 0.2.0 - 2026-09-30
 
 The account API client and `Proxy::sessions`, which close the gap to the Python
@@ -42,8 +53,9 @@ What a caller should know, all measured on the Python side:
   about several of its own fields.
 - `me()`, `sub_users()`, `create_sub_user()` and `reset_sub_user_usage()` return
   live proxy passwords.
-- A `2xx` whose body is not JSON is `Error::Api`: the API host answers a path it
-  does not serve with `200` and its web page.
+- A `2xx` whose body is not JSON is `Error::Api`: the API host redirects a path
+  it does not serve to a not-found page, which a transport that follows
+  redirects receives with `200`.
 - A page is capped at 1000 rows; `iterate()` walks the rest, stops on an empty
   page, advances by the rows returned, and refuses a server that ignores the
   cursor. It stops with an error after 100 pages rather than returning a
