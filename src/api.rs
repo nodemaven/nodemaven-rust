@@ -32,8 +32,10 @@
 //! - **`me()`, `sub_users()`, `create_sub_user()` and `reset_sub_user_usage()`
 //!   return live proxy passwords.** Do not log their results whole.
 //! - **A `2xx` whose body is not JSON is an [`Error::Api`].** The dashboard host
-//!   answers a path it does not serve with `200` and its web page, so a status
-//!   code alone never proves a call did anything.
+//!   redirects a path it does not serve to a not-found page, and a transport
+//!   that follows redirects receives that page with `200`, so a status code
+//!   alone never proves a call did anything. The built-in transport follows no
+//!   redirect, so it reports such a path as `Error::Api` with the `302`.
 //! - **One page is not the collection.** `limit` is capped at 1000 by the
 //!   server; [`Client::iterate`] walks the rest.
 //! - **Statistics dates are `dd-mm-yyyy`**, not the ISO form the vendor's
@@ -1056,9 +1058,9 @@ fn interpret(status: u16, raw: &[u8], method: &str, url: &str) -> Result<Value> 
                 status: Some(status),
                 message: format!(
                     "{where_} answered {status} with {} bytes of {what} where JSON was \
-                     expected. This host answers a path it does not serve with 200 and its \
-                     web front end, so the status says nothing about whether the call did \
-                     anything.",
+                     expected. This host redirects a path it does not serve to a not-found \
+                     page, and a client that follows the redirect gets that page with 200, \
+                     so the status says nothing about whether the call did anything.",
                     raw.len()
                 ),
             }
@@ -1166,6 +1168,18 @@ fn detail(parsed: Option<&Value>) -> String {
                     if !text.is_empty() {
                         return text.clone();
                     }
+                }
+            }
+            // The host's answer to a missing or rejected key:
+            // `{"error": {"code", "message", "retryable"}}`.
+            if let Some(Value::Object(error)) = object.get("error") {
+                if let Some(Value::String(message)) = error.get("message") {
+                    return match error.get("code") {
+                        Some(Value::String(code)) if !code.is_empty() => {
+                            format!("{message} ({code})")
+                        }
+                        _ => message.clone(),
+                    };
                 }
             }
             match object.get("errors") {

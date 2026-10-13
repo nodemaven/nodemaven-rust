@@ -52,7 +52,8 @@ pub enum Error {
     /// line came back - a timeout, a dropped connection, a refused redirect.
     ///
     /// A `2xx` whose body is not JSON is this variant: the dashboard host
-    /// answers a path it does not serve with `200` and its web page.
+    /// redirects a path it does not serve to a not-found page, which a
+    /// transport that follows redirects receives with `200`.
     Api {
         /// The HTTP status, when there was one.
         status: Option<u16>,

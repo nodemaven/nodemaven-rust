@@ -180,6 +180,21 @@ mod errors {
     }
 
     #[test]
+    fn the_nested_error_object_reads_as_its_message() {
+        // The host's answer to a missing or rejected key.
+        let body = r#"{"error": {"code": "authentication_required", "message": "Authentication credentials were not provided.", "retryable": false}}"#;
+        let (api, _) = client(vec![(401, body)]);
+        let message = api.me().unwrap_err().to_string();
+        assert!(
+            message.contains(
+                "Authentication credentials were not provided. (authentication_required)"
+            ),
+            "{message}"
+        );
+        assert!(!message.contains("retryable"), "{message}");
+    }
+
+    #[test]
     fn a_field_error_is_flattened_into_one_line() {
         let (api, _) = client(vec![(
             400,

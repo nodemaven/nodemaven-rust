@@ -8,6 +8,17 @@ is built on: a claim about what the gateway accepts carries the probe that
 established it and the date it was run. "The vendor's own documentation says so"
 is not one of those, and an entry resting on it says so outright.
 
+## Unreleased
+
+- **A rejected API key now reads as the server's own sentence.** The host
+  answers a missing or rejected key with
+  `{"error": {"code", "message", "retryable"}}`; `Error::Auth` used to show that
+  object flattened into one line, and now shows the message and the code.
+- **Corrected wording about unregistered paths.** The host redirects a path it
+  does not serve (`302`) to `/not-found`; a client that follows redirects
+  receives that page with `200`. The docs said the host answered `200` itself.
+  Behaviour is unchanged.
+
 ## 0.2.0 - 2026-09-30
 
 The account API client and `Proxy::sessions`, which close the gap to the Python
