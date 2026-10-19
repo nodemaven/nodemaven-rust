@@ -1161,7 +1161,14 @@ fn detail(parsed: Option<&Value>) -> String {
     };
     match value {
         Value::String(text) => text.clone(),
-        Value::Array(_) => flatten(value),
+        Value::Array(items) => {
+            let texts: Vec<&str> = items.iter().filter_map(Value::as_str).collect();
+            if texts.is_empty() {
+                shape(value)
+            } else {
+                texts.join("; ")
+            }
+        }
         Value::Object(object) => {
             for key in ["detail", "message", "error", "description"] {
                 if let Some(Value::String(text)) = object.get(key) {
@@ -1187,7 +1194,8 @@ fn detail(parsed: Option<&Value>) -> String {
                 Some(nested @ (Value::Object(_) | Value::Array(_))) if !is_empty(nested) => {
                     flatten(nested)
                 }
-                _ => flatten(value),
+                _ if field_errors(value) => flatten(value),
+                _ => shape(value),
             }
         }
         _ => String::new(),
@@ -1203,6 +1211,36 @@ fn flatten(value: &Value) -> String {
             .collect::<Vec<_>>()
             .join(", "),
         other => text(other),
+    }
+}
+
+/// `{field: [message, ...]}`, Django REST Framework's validation shape,
+/// possibly nested. Values that are not lists of strings are data, not
+/// messages, and data is not printed.
+fn field_errors(value: &Value) -> bool {
+    let Value::Object(object) = value else {
+        return false;
+    };
+    !object.is_empty()
+        && object.values().all(|v| match v {
+            Value::Object(_) => field_errors(v),
+            Value::Array(items) => !items.is_empty() && items.iter().all(Value::is_string),
+            _ => false,
+        })
+}
+
+/// An answer with no message, described without any of its values. The
+/// sub-user payload carries `proxy_password`, so printing an unknown body is
+/// printing a live credential into whatever logs the error.
+fn shape(value: &Value) -> String {
+    match value {
+        Value::Object(object) if !object.is_empty() => {
+            let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            format!("no message in the answer (keys: {})", keys.join(", "))
+        }
+        Value::Array(items) => format!("no message in the answer (a list of {})", items.len()),
+        _ => "no message in the answer".to_string(),
     }
 }
 
