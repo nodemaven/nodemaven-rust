@@ -254,6 +254,10 @@ mod errors {
             400,
             r#"{"errors": {"payload": {"proxy_password": "LIVE-PASSWORD"}}}"#,
         )]);
+        let message = api_error(api.me()).1;
+        assert!(!message.contains("LIVE-PASSWORD"), "{message}");
+        assert!(message.contains("keys: payload"), "{message}");
+        let (api, _) = client(vec![(400, r#"["LIVE-PASSWORD", {"proxy_password": "x"}]"#)]);
         assert!(!api_error(api.me()).1.contains("LIVE-PASSWORD"));
         let (api, _) = client(vec![(500, r#"[{"proxy_password": "LIVE-PASSWORD"}]"#)]);
         assert!(!api_error(api.me()).1.contains("LIVE-PASSWORD"));

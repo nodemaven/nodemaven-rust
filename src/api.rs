@@ -1161,14 +1161,12 @@ fn detail(parsed: Option<&Value>) -> String {
     };
     match value {
         Value::String(text) => text.clone(),
-        Value::Array(items) => {
-            let texts: Vec<&str> = items.iter().filter_map(Value::as_str).collect();
-            if texts.is_empty() {
-                shape(value)
-            } else {
-                texts.join("; ")
-            }
-        }
+        Value::Array(items) if texts(value) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join("; "),
+        Value::Array(_) => shape(value),
         Value::Object(object) => {
             for key in ["detail", "message", "error", "description"] {
                 if let Some(Value::String(text)) = object.get(key) {
@@ -1221,14 +1219,25 @@ fn flatten(value: &Value) -> String {
 /// What an `errors` value may hold to be printed: messages, or a field mapped
 /// to a message or a list of them. Anything nested deeper is data.
 fn error_messages(value: &Value) -> bool {
-    let messages = |v: &Value| match v {
-        Value::String(_) => true,
-        Value::Array(items) => !items.is_empty() && items.iter().all(Value::is_string),
-        _ => false,
-    };
     match value {
-        Value::Array(items) => items.iter().all(Value::is_string),
-        Value::Object(object) => object.values().all(messages),
+        Value::Array(_) => texts(value),
+        Value::Object(object) => object.values().all(|v| match v {
+            Value::String(text) => !text.is_empty(),
+            other => texts(other),
+        }),
+        _ => false,
+    }
+}
+
+/// A non-empty list of non-empty strings: messages, not data.
+fn texts(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => {
+            !items.is_empty()
+                && items
+                    .iter()
+                    .all(|item| item.as_str().is_some_and(|text| !text.is_empty()))
+        }
         _ => false,
     }
 }
@@ -1243,7 +1252,7 @@ fn field_errors(value: &Value) -> bool {
     !object.is_empty()
         && object.values().all(|v| match v {
             Value::Object(_) => field_errors(v),
-            Value::Array(items) => !items.is_empty() && items.iter().all(Value::is_string),
+            Value::Array(_) => texts(v),
             _ => false,
         })
 }
