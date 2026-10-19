@@ -1192,7 +1192,11 @@ fn detail(parsed: Option<&Value>) -> String {
             match object.get("errors") {
                 Some(Value::String(text)) if !text.is_empty() => text.clone(),
                 Some(nested @ (Value::Object(_) | Value::Array(_))) if !is_empty(nested) => {
-                    flatten(nested)
+                    if error_messages(nested) {
+                        flatten(nested)
+                    } else {
+                        shape(nested)
+                    }
                 }
                 _ if field_errors(value) => flatten(value),
                 _ => shape(value),
@@ -1211,6 +1215,21 @@ fn flatten(value: &Value) -> String {
             .collect::<Vec<_>>()
             .join(", "),
         other => text(other),
+    }
+}
+
+/// What an `errors` value may hold to be printed: messages, or a field mapped
+/// to a message or a list of them. Anything nested deeper is data.
+fn error_messages(value: &Value) -> bool {
+    let messages = |v: &Value| match v {
+        Value::String(_) => true,
+        Value::Array(items) => !items.is_empty() && items.iter().all(Value::is_string),
+        _ => false,
+    };
+    match value {
+        Value::Array(items) => items.iter().all(Value::is_string),
+        Value::Object(object) => object.values().all(messages),
+        _ => false,
     }
 }
 

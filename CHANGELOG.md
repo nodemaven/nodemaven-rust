@@ -16,8 +16,9 @@ An `Error::Api` whose answer carried no message of its own used to quote the
 whole body. The sub-user payload holds `proxy_password`, so an answer with
 `success: false`, an empty description and that payload put the live proxy
 password into the error text, and from there into logs. The text now comes only
-from `detail`, `message`, `error`, `description`, `errors` or field errors
-(`{field: [message]}`); any other body is described by its key names, as in
+from `detail`, `message`, `error` and `description`, from `errors` when it holds
+messages (or a field mapped to messages), or from field errors
+(`{field: [message]}`); anything else is described by its key names, as in
 `no message in the answer (keys: description, errors, payload, success)`.
 
 ## 0.2.1 - 2026-10-13
