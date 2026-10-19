@@ -233,6 +233,39 @@ mod errors {
     }
 
     #[test]
+    fn an_answer_without_a_message_never_puts_its_values_in_the_error() {
+        // The sub-user payload carries the live proxy password; an answer with
+        // success=false and an empty description once printed it.
+        let (api, _) = client(vec![(
+            200,
+            r#"{"success": false, "description": "", "errors": "", "payload": {"proxy_username": "u", "proxy_password": "LIVE-PASSWORD"}}"#,
+        )]);
+        let message = api_error(api.delete_sub_user(9)).1;
+        assert!(!message.contains("LIVE-PASSWORD"), "{message}");
+        assert!(
+            message.contains("keys: description, errors, payload, success"),
+            "{message}"
+        );
+        let (api, _) = client(vec![(400, r#"{"proxy_password": "LIVE-PASSWORD"}"#)]);
+        let message = api_error(api.me()).1;
+        assert!(!message.contains("LIVE-PASSWORD"), "{message}");
+        assert!(message.contains("keys: proxy_password"), "{message}");
+        let (api, _) = client(vec![(
+            400,
+            r#"{"errors": {"payload": {"proxy_password": "LIVE-PASSWORD"}}}"#,
+        )]);
+        let message = api_error(api.me()).1;
+        assert!(!message.contains("LIVE-PASSWORD"), "{message}");
+        assert!(message.contains("keys: payload"), "{message}");
+        let (api, _) = client(vec![(400, r#"["LIVE-PASSWORD", {"proxy_password": "x"}]"#)]);
+        assert!(!api_error(api.me()).1.contains("LIVE-PASSWORD"));
+        let (api, _) = client(vec![(500, r#"[{"proxy_password": "LIVE-PASSWORD"}]"#)]);
+        assert!(!api_error(api.me()).1.contains("LIVE-PASSWORD"));
+        let (api, _) = client(vec![(400, r#"{"expiry_date": ["Enter a valid date."]}"#)]);
+        assert!(api_error(api.me()).1.contains("Enter a valid date."));
+    }
+
+    #[test]
     fn a_list_endpoint_answering_a_string_is_refused() {
         let (api, _) = client(vec![(200, r#""nothing""#)]);
         assert!(api_error(api.countries(&[]))

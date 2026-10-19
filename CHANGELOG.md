@@ -8,6 +8,20 @@ is built on: a claim about what the gateway accepts carries the probe that
 established it and the date it was run. "The vendor's own documentation says so"
 is not one of those, and an entry resting on it says so outright.
 
+## 0.2.2 - 2026-10-19
+
+### An error never prints a body that has no message
+
+An `Error::Api` whose answer carried no message of its own used to quote the
+whole body. The sub-user payload holds `proxy_password`, so an answer with
+`success: false`, an empty description and that payload put the live proxy
+password into the error text, and from there into logs. The text now comes only
+from a body that is itself a message (a string or a list of strings), from
+`detail`, `message`, `error` and `description`, from `errors` when it holds
+messages (or a field mapped to messages), or from field errors
+(`{field: [message]}`); anything else is described by its key names, as in
+`no message in the answer (keys: description, errors, payload, success)`.
+
 ## 0.2.1 - 2026-10-13
 
 - **A rejected API key now reads as the server's own sentence.** The host

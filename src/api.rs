@@ -1161,7 +1161,12 @@ fn detail(parsed: Option<&Value>) -> String {
     };
     match value {
         Value::String(text) => text.clone(),
-        Value::Array(_) => flatten(value),
+        Value::Array(items) if texts(value) => items
+            .iter()
+            .filter_map(Value::as_str)
+            .collect::<Vec<_>>()
+            .join("; "),
+        Value::Array(_) => shape(value),
         Value::Object(object) => {
             for key in ["detail", "message", "error", "description"] {
                 if let Some(Value::String(text)) = object.get(key) {
@@ -1185,9 +1190,14 @@ fn detail(parsed: Option<&Value>) -> String {
             match object.get("errors") {
                 Some(Value::String(text)) if !text.is_empty() => text.clone(),
                 Some(nested @ (Value::Object(_) | Value::Array(_))) if !is_empty(nested) => {
-                    flatten(nested)
+                    if error_messages(nested) {
+                        flatten(nested)
+                    } else {
+                        shape(nested)
+                    }
                 }
-                _ => flatten(value),
+                _ if field_errors(value) => flatten(value),
+                _ => shape(value),
             }
         }
         _ => String::new(),
@@ -1203,6 +1213,62 @@ fn flatten(value: &Value) -> String {
             .collect::<Vec<_>>()
             .join(", "),
         other => text(other),
+    }
+}
+
+/// What an `errors` value may hold to be printed: messages, or a field mapped
+/// to a message or a list of them. Anything nested deeper is data.
+fn error_messages(value: &Value) -> bool {
+    match value {
+        Value::Array(_) => texts(value),
+        Value::Object(object) => object.values().all(|v| match v {
+            Value::String(text) => !text.is_empty(),
+            other => texts(other),
+        }),
+        _ => false,
+    }
+}
+
+/// A non-empty list of non-empty strings: messages, not data.
+fn texts(value: &Value) -> bool {
+    match value {
+        Value::Array(items) => {
+            !items.is_empty()
+                && items
+                    .iter()
+                    .all(|item| item.as_str().is_some_and(|text| !text.is_empty()))
+        }
+        _ => false,
+    }
+}
+
+/// `{field: [message, ...]}`, Django REST Framework's validation shape,
+/// possibly nested. Values that are not lists of strings are data, not
+/// messages, and data is not printed.
+fn field_errors(value: &Value) -> bool {
+    let Value::Object(object) = value else {
+        return false;
+    };
+    !object.is_empty()
+        && object.values().all(|v| match v {
+            Value::Object(_) => field_errors(v),
+            Value::Array(_) => texts(v),
+            _ => false,
+        })
+}
+
+/// An answer with no message, described without any of its values. The
+/// sub-user payload carries `proxy_password`, so printing an unknown body is
+/// printing a live credential into whatever logs the error.
+fn shape(value: &Value) -> String {
+    match value {
+        Value::Object(object) if !object.is_empty() => {
+            let mut keys: Vec<&str> = object.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            format!("no message in the answer (keys: {})", keys.join(", "))
+        }
+        Value::Array(items) => format!("no message in the answer (a list of {})", items.len()),
+        _ => "no message in the answer".to_string(),
     }
 }
 
