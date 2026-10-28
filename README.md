@@ -31,6 +31,7 @@
 [![crates.io](https://img.shields.io/crates/v/nodemaven.svg)](https://crates.io/crates/nodemaven)
 [![docs.rs](https://docs.rs/nodemaven/badge.svg)](https://docs.rs/nodemaven)
 [![license](https://img.shields.io/crates/l/nodemaven.svg)](#license)
+[![2 GB free with code GITHUB](https://img.shields.io/badge/%F0%9F%8E%81%202%20GB%20free-code%20GITHUB-1153FC)](https://dashboard.nodemaven.com/accounts/signup/?utm_source=github&utm_medium=readme&utm_campaign=sdk_rust&utm_content=promo_badge)
 
 </div>
 
@@ -58,7 +59,8 @@ whitelisting, which needs no credentials in the username at all; both are
 described in
 [authentication methods](https://docs.nodemaven.com/en/articles/9979031-authentication-methods).
 
-No account yet? [Sign up](https://dashboard.nodemaven.com/accounts/signup/?utm_source=github&utm_medium=readme&utm_campaign=sdk_rust&utm_content=signup_promo) and enter the code **GITHUB** for 2 GB of free traffic, once per account.
+> [!TIP]
+> 🎁 **2 GB of free traffic.** No account yet? [Sign up](https://dashboard.nodemaven.com/accounts/signup/?utm_source=github&utm_medium=readme&utm_campaign=sdk_rust&utm_content=signup_promo) and enter the code **GITHUB**. Once per account.
 
 ```rust
 use nodemaven::Proxy;
