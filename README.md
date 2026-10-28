@@ -58,6 +58,8 @@ whitelisting, which needs no credentials in the username at all; both are
 described in
 [authentication methods](https://docs.nodemaven.com/en/articles/9979031-authentication-methods).
 
+No account yet? [Sign up](https://dashboard.nodemaven.com/accounts/signup/?utm_source=github&utm_medium=readme&utm_campaign=sdk_rust&utm_content=signup_promo) and enter the code **GITHUB** for 2 GB of free traffic, once per account.
+
 ```rust
 use nodemaven::Proxy;
 
